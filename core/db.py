@@ -38,6 +38,28 @@ CREATE INDEX IF NOT EXISTS idx_messages_conversation
 
 CREATE INDEX IF NOT EXISTS idx_conversations_updated
     ON conversations (updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS documents (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    filename    TEXT    NOT NULL,
+    filetype    TEXT    NOT NULL,
+    filesize    INTEGER NOT NULL,
+    char_count  INTEGER NOT NULL DEFAULT 0,
+    status      TEXT    NOT NULL,
+    uploaded_at TEXT    NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS document_text (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    document_id INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+    content     TEXT    NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_document_text_document
+    ON document_text (document_id);
+
+CREATE INDEX IF NOT EXISTS idx_documents_uploaded
+    ON documents (uploaded_at DESC);
 """
 
 
@@ -206,3 +228,70 @@ def count_messages(conversation_id: int, role: str | None = None) -> int:
         params.append(role)
     with connect() as conn:
         return int(conn.execute(sql, params).fetchone()[0])
+
+
+# --------------------------------------------------------------------------- #
+# Documents
+# --------------------------------------------------------------------------- #
+def save_document(
+    filename: str,
+    filetype: str,
+    filesize: int,
+    status: str,
+    text: str = "",
+) -> int:
+    """Simpan metadata dokumen beserta teks hasil ekstraksinya.
+
+    Keduanya ditulis dalam satu transaksi supaya tidak pernah ada baris
+    ``documents`` yang teksnya menggantung setengah jalan.
+    """
+    with connect() as conn:
+        cur = conn.execute(
+            """
+            INSERT INTO documents (filename, filetype, filesize, char_count, status, uploaded_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (filename, filetype, filesize, len(text), status, _now()),
+        )
+        document_id = int(cur.lastrowid)
+        if text:
+            conn.execute(
+                "INSERT INTO document_text (document_id, content) VALUES (?, ?)",
+                (document_id, text),
+            )
+        return document_id
+
+
+def list_documents() -> list[dict[str, Any]]:
+    """Daftar dokumen, yang paling baru diunggah ada di atas."""
+    with connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT id, filename, filetype, filesize, char_count, status, uploaded_at
+            FROM documents
+            ORDER BY uploaded_at DESC, id DESC
+            """
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def count_documents() -> int:
+    with connect() as conn:
+        return int(conn.execute("SELECT COUNT(*) FROM documents").fetchone()[0])
+
+
+def get_document_text(document_id: int) -> str:
+    """Gabungan teks milik satu dokumen (string kosong kalau tidak ada)."""
+    with connect() as conn:
+        rows = conn.execute(
+            "SELECT content FROM document_text WHERE document_id = ? ORDER BY id",
+            (document_id,),
+        ).fetchall()
+    return "\n".join(row["content"] for row in rows)
+
+
+def delete_document(document_id: int) -> None:
+    """Hapus dokumen beserta seluruh data turunannya."""
+    with connect() as conn:
+        conn.execute("DELETE FROM document_text WHERE document_id = ?", (document_id,))
+        conn.execute("DELETE FROM documents WHERE id = ?", (document_id,))

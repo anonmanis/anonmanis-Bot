@@ -11,11 +11,40 @@ from typing import Iterable, Iterator
 
 import streamlit as st
 
-from core import db, llm
+from core import db, ingest, llm
 from core.config import APP_NAME, APP_TAGLINE, get_settings
 
 USER_AVATAR = ":material/person:"
 BOT_AVATAR = ":material/auto_awesome:"
+
+# Ikon garis 16px untuk tiap tipe file; mewarisi warna aksen lewat currentColor.
+_SVG = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">{}</svg>'
+_PAGE = '<path d="M9.2 1.8H4.4A1.4 1.4 0 0 0 3 3.2v9.6a1.4 1.4 0 0 0 1.4 1.4h7.2a1.4 1.4 0 0 0 1.4-1.4V5.6z"/><path d="M9.2 1.8v3.8H13"/>'
+
+FILE_ICONS = {
+    "pdf": _SVG.format(_PAGE + '<path d="M5.4 10.6h5.2"/>'),
+    "docx": _SVG.format(_PAGE + '<path d="M5.4 8.6h5.2M5.4 11.2h3.4"/>'),
+    "xlsx": _SVG.format(
+        '<rect x="2.4" y="2.4" width="11.2" height="11.2" rx="1.6"/>'
+        '<path d="M2.4 6.4h11.2M2.4 9.6h11.2M6.4 2.4v11.2"/>'
+    ),
+    "pptx": _SVG.format(
+        '<rect x="2" y="2.8" width="12" height="8.4" rx="1.4"/>'
+        '<path d="M8 11.2v2.4M5.6 13.6h4.8"/>'
+    ),
+    "image": _SVG.format(
+        '<rect x="2.2" y="3" width="11.6" height="10" rx="1.8"/>'
+        '<circle cx="6" cy="6.4" r="1.1"/>'
+        '<path d="M3 11.6l3.1-3 2.4 2.2 2.1-2 2.4 2.4"/>'
+    ),
+}
+
+# Label pendek untuk status dokumen yang bukan "processed"
+STATUS_LABELS = {
+    ingest.STATUS_PENDING_EXTRACTION: "menunggu tahap 4",
+    ingest.STATUS_NO_TEXT: "tanpa teks",
+    ingest.STATUS_FAILED: "gagal",
+}
 
 SUGGESTIONS = [
     ("Jelaskan konsep", "Jelaskan apa itu Retrieval Augmented Generation dengan analogi sederhana."),
@@ -141,7 +170,13 @@ footer,
 [data-testid="stChatInput"] textarea::placeholder { color: var(--nb-muted); }
 
 /* --- Sidebar --- */
-[data-testid="stSidebar"] { border-right: 1px solid var(--nb-border); }
+/* Sidebar dilebarkan dari default 300px: sekarang menampung daftar dokumen
+   dengan nama, tipe, ukuran, jumlah karakter, dan jam unggah dalam satu baris. */
+[data-testid="stSidebar"] {
+    border-right: 1px solid var(--nb-border);
+    width: 21rem !important;
+}
+[data-testid="stSidebar"] > div { width: 21rem; }
 [data-testid="stSidebarContent"] { padding: 1.4rem 0.9rem 1rem; }
 [data-testid="stSidebar"] hr {
     margin: 0.9rem 0;
@@ -318,6 +353,158 @@ footer,
     transform: translateY(-1px);
 }
 
+
+/* --- Bagian dokumen di sidebar --- */
+.st-key-uploader [data-testid="stFileUploaderDropzone"] {
+    background: var(--nb-surface);
+    border: 1px dashed var(--nb-border);
+    border-radius: 14px;
+    padding: 0.7rem 0.8rem;
+    min-height: 0;
+    transition: border-color 0.15s ease, background 0.15s ease;
+}
+.st-key-uploader [data-testid="stFileUploaderDropzone"]:hover {
+    border-color: rgba(124, 92, 255, 0.55);
+    background: var(--nb-elevated);
+}
+/* Streamlit menulis plafon server (25MB) di dropzone. Batas sebenarnya 5 MB
+   dan divalidasi di core/ingest.py, jadi teksnya diganti agar tidak
+   menyesatkan: font-size 0 menyembunyikan teks asli, ::after menggantinya. */
+.st-key-uploader [data-testid="stFileUploaderDropzoneInstructions"] span {
+    font-size: 0;
+    line-height: 1.5;
+}
+.st-key-uploader [data-testid="stFileUploaderDropzoneInstructions"] span::after {
+    content: "PDF · DOCX · XLSX · PPTX · PNG · JPG";
+    font-size: 0.72rem;
+    color: var(--nb-muted);
+    white-space: normal;
+}
+.st-key-uploader [data-testid="stFileUploaderDropzone"] button {
+    border-radius: 999px !important;
+    font-size: 0.78rem;
+    padding: 0.25rem 0.75rem;
+}
+.st-key-uploader [data-testid="stFileUploaderFile"] { font-size: 0.75rem; }
+
+/* Indikator kuota "3 dari 5 file terpakai" */
+.nb-quota { padding: 0.55rem 0.6rem 0.15rem; }
+.nb-quota-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.5rem;
+    font-size: 0.74rem;
+    color: var(--nb-muted);
+    margin-bottom: 0.4rem;
+}
+.nb-quota-head strong { color: var(--nb-text); font-weight: 600; }
+.nb-quota-cap { font-size: 0.68rem; opacity: 0.8; }
+.nb-quota-bar {
+    height: 4px;
+    border-radius: 99px;
+    background: var(--nb-elevated);
+    overflow: hidden;
+}
+.nb-quota-bar > span {
+    display: block;
+    height: 100%;
+    border-radius: 99px;
+    background: linear-gradient(90deg, var(--nb-accent), #9B85FF);
+    transition: width 0.25s ease;
+}
+.nb-quota.is-full .nb-quota-bar > span { background: #FF8B8B; }
+
+/* Baris dokumen */
+.nb-doc {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    padding: 0.38rem 0 0.38rem 0.45rem;
+    min-width: 0;
+}
+.nb-doc-icon {
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+    width: 1.7rem;
+    height: 1.7rem;
+    border-radius: 9px;
+    background: var(--nb-accent-dim);
+    border: 1px solid rgba(124, 92, 255, 0.28);
+    color: var(--nb-accent);
+}
+.nb-doc-icon svg { width: 15px; height: 15px; display: block; }
+.nb-doc-body { display: flex; flex-direction: column; min-width: 0; gap: 0.1rem; }
+.nb-doc-name {
+    font-size: 0.82rem;
+    font-weight: 500;
+    color: var(--nb-text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.nb-doc-meta {
+    font-size: 0.66rem;
+    color: var(--nb-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.nb-note {
+    padding: 0.6rem 0.6rem 0;
+    font-size: 0.68rem;
+    line-height: 1.65;
+    color: var(--nb-muted);
+    opacity: 0.85;
+}
+
+/* Alert hasil unggah dibuat ringkas supaya muat di sidebar */
+[data-testid="stSidebar"] [data-testid="stAlertContainer"] {
+    padding: 0.55rem 0.7rem;
+    font-size: 0.76rem;
+    line-height: 1.55;
+    border-radius: 12px;
+}
+
+/* Chip file bawaan uploader disesuaikan dengan tema */
+.st-key-uploader [data-testid="stFileChip"] {
+    background: var(--nb-elevated) !important;
+    border: 1px solid var(--nb-border) !important;
+    border-radius: 10px;
+    font-size: 0.75rem;
+}
+.st-key-uploader [data-testid="stFileChip"] svg { color: var(--nb-accent); }
+
+/* st.status: tiap tahap pemrosesan tampil sebagai langkah bertanda */
+[data-testid="stSidebar"] [data-testid="stExpander"] details {
+    border-radius: 12px;
+    border-color: var(--nb-border);
+    background: var(--nb-surface);
+}
+[data-testid="stSidebar"] [data-testid="stExpander"] summary {
+    font-size: 0.79rem;
+    font-weight: 600;
+}
+[data-testid="stSidebar"] [data-testid="stExpander"] [data-testid="stMarkdown"] p {
+    position: relative;
+    font-size: 0.73rem;
+    line-height: 1.55;
+    color: var(--nb-muted);
+    margin: 0 0 0.3rem;
+    padding-left: 0.85rem;
+}
+[data-testid="stSidebar"] [data-testid="stExpander"] [data-testid="stMarkdown"] p::before {
+    content: "";
+    position: absolute;
+    left: 0.15rem;
+    top: 0.55em;
+    width: 4px;
+    height: 4px;
+    border-radius: 99px;
+    background: var(--nb-accent);
+}
+
 /* --- Tombol "Coba lagi" saat jawaban gagal --- */
 .st-key-retry_wrap { margin: 0.35rem 0 0 3rem; }
 .st-key-retry_wrap button {
@@ -381,6 +568,7 @@ def active_conversation_id() -> int | None:
 def open_conversation(conversation_id: int | None) -> None:
     st.session_state.conversation_id = conversation_id
     st.session_state.pending_delete = None
+    st.session_state.pending_doc_delete = None
 
 
 # --------------------------------------------------------------------------- #
@@ -413,6 +601,9 @@ def render_sidebar(conversations: list[dict]) -> None:
                 st.rerun()
 
         st.divider()
+        render_documents_section()
+
+        st.divider()
         st.markdown(
             f'<div class="nb-section">Riwayat'
             f'<span class="nb-count">{len(conversations)}</span></div>',
@@ -434,6 +625,169 @@ def render_sidebar(conversations: list[dict]) -> None:
         st.markdown(
             f'<div class="nb-foot">Model <code>{settings.model}</code><br>'
             "Riwayat tersimpan lokal di SQLite.</div>",
+            unsafe_allow_html=True,
+        )
+
+
+
+# --------------------------------------------------------------------------- #
+# Sidebar: dokumen
+# --------------------------------------------------------------------------- #
+def shorten(name: str, limit: int = 26) -> str:
+    """Potong nama file yang terlalu panjang, ekstensinya tetap terlihat."""
+    if len(name) <= limit:
+        return name
+    stem, dot, extension = name.rpartition(".")
+    head = (stem or name)[: limit - len(extension) - 4]
+    return f"{head}…{dot}{extension}" if dot else f"{name[: limit - 1]}…"
+
+
+def process_uploads(files: list) -> None:
+    """Jalankan pipeline ingest untuk tiap file sambil menampilkan tahapannya."""
+    results = []
+    for uploaded in files:
+        label = shorten(uploaded.name, 22)
+        with st.status(f"Memproses {label}", expanded=True) as status:
+            result = ingest.ingest(uploaded.name, uploaded.getvalue(), progress=st.write)
+            status.update(
+                label=f"{label} — {'selesai' if result.ok else 'ditolak'}",
+                state="complete" if result.ok else "error",
+                expanded=False,
+            )
+        results.append(result)
+
+    st.session_state.upload_results = results
+    # Ganti key uploader supaya widget-nya kosong lagi dan file tidak diproses dua kali.
+    st.session_state.upload_round = st.session_state.get("upload_round", 0) + 1
+    st.rerun()
+
+
+def render_upload_results() -> None:
+    """Hasil unggahan terakhir; hilang sendiri begitu ada interaksi lain."""
+    for result in st.session_state.pop("upload_results", []):
+        name = shorten(result.filename, 22)
+        if result.ok:
+            st.success(f"**{name}** {result.message}", icon=":material/check_circle:")
+        else:
+            st.error(f"**{name}** ditolak. {result.message}", icon=":material/block:")
+
+
+def render_quota(used: int) -> None:
+    """Indikator '3 dari 5 file terpakai' beserta bar-nya."""
+    total = ingest.MAX_DOCUMENTS
+    percent = round(used / total * 100)
+    state = " is-full" if used >= total else ""
+    st.markdown(
+        f"""
+        <div class="nb-quota{state}">
+            <div class="nb-quota-head">
+                <span><strong>{used}</strong> dari {total} file terpakai</span>
+                <span class="nb-quota-cap">maks {ingest.MAX_FILE_SIZE_MB} MB/file</span>
+            </div>
+            <div class="nb-quota-bar"><span style="width:{percent}%"></span></div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_document_row(document: dict) -> None:
+    """Satu baris dokumen: ikon, nama, metadata, dan tombol hapus berkonfirmasi."""
+    document_id = document["id"]
+    filetype = document["filetype"]
+    icon = FILE_ICONS.get(filetype if filetype not in ingest.IMAGE_TYPES else "image", "")
+
+    if st.session_state.get("pending_doc_delete") == document_id:
+        label, confirm, cancel = st.columns(
+            [0.6, 0.2, 0.2], gap="small", vertical_alignment="center"
+        )
+        label.markdown('<div class="nb-hint">Hapus dokumen ini?</div>', unsafe_allow_html=True)
+        with confirm.container(key=f"confirmdoc_{document_id}"):
+            if st.button(
+                "", icon=":material/check:", key=f"confirmdoc_btn_{document_id}",
+                width="stretch", help="Ya, hapus dokumen dan teksnya",
+            ):
+                db.delete_document(document_id)
+                st.session_state.pending_doc_delete = None
+                st.rerun()
+        with cancel.container(key=f"canceldoc_{document_id}"):
+            if st.button(
+                "", icon=":material/close:", key=f"canceldoc_btn_{document_id}",
+                width="stretch", help="Batal",
+            ):
+                st.session_state.pending_doc_delete = None
+                st.rerun()
+        return
+
+    detail = ingest.type_label(filetype) + " · " + ingest.human_size(document["filesize"])
+    if document["status"] in STATUS_LABELS:
+        detail += " · " + STATUS_LABELS[document["status"]]
+    else:
+        detail += " · " + ingest.thousands(document["char_count"]) + " karakter"
+    uploaded_at = document["uploaded_at"][11:16]
+
+    info_col, delete_col = st.columns([0.87, 0.13], gap="small", vertical_alignment="center")
+    with info_col:
+        st.markdown(
+            f"""
+            <div class="nb-doc">
+                <span class="nb-doc-icon">{icon}</span>
+                <span class="nb-doc-body">
+                    <span class="nb-doc-name">{escape(shorten(document["filename"]))}</span>
+                    <span class="nb-doc-meta">{escape(detail)} · {uploaded_at}</span>
+                </span>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    with delete_col.container(key=f"deldoc_{document_id}"):
+        if st.button(
+            "", icon=":material/delete:", key=f"deldoc_btn_{document_id}",
+            width="stretch", type="tertiary", help="Hapus dokumen",
+        ):
+            st.session_state.pending_doc_delete = document_id
+            st.rerun()
+
+
+def render_documents_section() -> None:
+    """Blok unggah dokumen: uploader, kuota, dan daftar dokumen tersimpan."""
+    documents = db.list_documents()
+    used = len(documents)
+
+    st.markdown(
+        f'<div class="nb-section">Dokumen'
+        f'<span class="nb-count">{used}/{ingest.MAX_DOCUMENTS}</span></div>',
+        unsafe_allow_html=True,
+    )
+
+    if used < ingest.MAX_DOCUMENTS:
+        with st.container(key="uploader"):
+            files = st.file_uploader(
+                "Unggah dokumen",
+                type=list(ingest.ALLOWED_TYPES),
+                accept_multiple_files=True,
+                key=f"uploader_{st.session_state.get('upload_round', 0)}",
+                label_visibility="collapsed",
+            )
+        if files:
+            process_uploads(files)
+    else:
+        st.markdown(
+            '<div class="nb-hint">Penyimpanan penuh. Hapus salah satu dokumen '
+            "dulu untuk bisa mengunggah lagi.</div>",
+            unsafe_allow_html=True,
+        )
+
+    render_upload_results()
+    render_quota(used)
+
+    for document in documents:
+        render_document_row(document)
+
+    if documents:
+        st.markdown(
+            '<div class="nb-note">File asli tidak disimpan — hanya teks hasil '
+            "ekstraksinya. Dokumen belum dipakai untuk menjawab; itu bagian tahap RAG.</div>",
             unsafe_allow_html=True,
         )
 
@@ -602,6 +956,8 @@ def main() -> None:
     settings = get_settings()
     st.session_state.setdefault("conversation_id", None)
     st.session_state.setdefault("pending_delete", None)
+    st.session_state.setdefault("pending_doc_delete", None)
+    st.session_state.setdefault("upload_round", 0)
 
     conv_id = active_conversation_id()
     db.delete_empty_conversations(except_id=conv_id)

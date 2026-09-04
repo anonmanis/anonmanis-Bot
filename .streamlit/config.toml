@@ -46,3 +46,7 @@ gatherUsageStats = false
 
 [server]
 headless = true
+# Batas sebenarnya 5 MB dan divalidasi di core/ingest.py supaya pesan
+# penolakannya ramah. Angka di sini hanya plafon pengaman agar file yang
+# sedikit melewati batas tetap sampai ke validator kita.
+maxUploadSize = 25
