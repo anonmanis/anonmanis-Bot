@@ -1,0 +1,48 @@
+# Tema kustom: gelap, satu warna aksen (violet), sudut membulat.
+[theme]
+base                     = "dark"
+primaryColor             = "#7C5CFF"
+backgroundColor          = "#0B0D12"
+secondaryBackgroundColor = "#12151E"
+textColor                = "#E9EBF2"
+borderColor              = "#242A3A"
+linkColor                = "#A08CFF"
+codeBackgroundColor      = "#12151E"
+# Warna semantik untuk st.warning / st.error / st.success / st.info
+orangeColor              = "#F1C377"
+orangeTextColor          = "#F1C377"
+orangeBackgroundColor    = "#241C10"
+redColor                 = "#FF8B8B"
+redTextColor             = "#FF8B8B"
+redBackgroundColor       = "#26141A"
+greenColor               = "#6FE0A8"
+greenTextColor           = "#6FE0A8"
+greenBackgroundColor     = "#0F2419"
+blueColor                = "#8FB8FF"
+blueTextColor            = "#8FB8FF"
+blueBackgroundColor      = "#121B2C"
+baseRadius               = "large"
+buttonRadius             = "12px"
+showWidgetBorder         = true
+showSidebarBorder        = true
+font        = "\"Plus Jakarta Sans\", \"Inter\", -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif"
+headingFont = "\"Plus Jakarta Sans\", \"Inter\", -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif"
+codeFont    = "\"JetBrains Mono\", ui-monospace, SFMono-Regular, Menlo, monospace"
+
+# Sidebar sedikit lebih gelap dari area chat supaya ada pemisahan visual.
+[theme.sidebar]
+backgroundColor          = "#080A0F"
+secondaryBackgroundColor = "#12151E"
+borderColor              = "#1D2231"
+primaryColor             = "#7C5CFF"
+textColor                = "#E9EBF2"
+
+[client]
+toolbarMode          = "minimal"
+showSidebarNavigation = false
+
+[browser]
+gatherUsageStats = false
+
+[server]
+headless = true
