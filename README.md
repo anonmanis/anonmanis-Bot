@@ -1,11 +1,11 @@
 # Nimbus — Chatbot AI (Streamlit + Groq)
 
 Chatbot dengan antarmuka Streamlit, jawaban streaming dari Groq
-(`llama-3.3-70b-versatile`), dan riwayat percakapan tersimpan di SQLite.
+(`llama-3.3-70b-versatile`), riwayat di SQLite, dan RAG di atas dokumen
+yang diunggah — embedding Gemini, vector store Qdrant local mode.
 
-> Tahap 1 chat dasar dan tahap 2 upload file sudah jalan. Retrieval (RAG)
-> menyusul di tahap berikutnya — dokumen yang diunggah belum dipakai untuk
-> menjawab.
+> Tahap 1 (chat dasar), tahap 2 (upload file), dan tahap 3 (RAG) sudah jalan.
+> Ekstraksi isi gambar menyusul di tahap 4.
 
 ## Fitur
 
@@ -40,6 +40,42 @@ Chatbot dengan antarmuka Streamlit, jawaban streaming dari Groq
 Gambar hanya dicatat metadatanya (`status = pending`); ekstraksi isinya
 dikerjakan di tahap 4.
 
+### RAG
+
+Vector store **Qdrant local mode** (on-disk di `./data/qdrant`, tanpa server
+dan tanpa Docker), metric **COSINE**. Embedding memakai **Gemini Embedding
+API** (`gemini-embedding-001`), `task_type` `RETRIEVAL_DOCUMENT` untuk isi
+dokumen dan `RETRIEVAL_QUERY` untuk pertanyaan.
+
+**Chunking** — target 800 karakter, overlap 150. Potongan diambil di batas
+kalimat; kalimat yang kepanjangan dipecah di batas kata, tidak pernah di
+tengah kata. Payload tiap chunk: `document_id`, `filename`, `chunk_index`,
+`text`.
+
+**Saat upload:** teks → chunking → embedding tiap chunk → simpan ke Qdrant.
+
+**Saat bertanya:**
+
+1. Pertanyaan di-embedding
+2. Cari 5 chunk termirip di Qdrant
+3. Kutipannya disusun jadi context dan dikirim ke Groq bersama pertanyaan
+   aslinya — sebagai **teks biasa**; vector tidak pernah ikut dikirim
+4. Model diinstruksikan menjawab hanya dari context, dan mengaku tidak tahu
+   kalau informasinya memang tidak ada di dokumen
+
+Di UI:
+
+- Expander **Sumber** di bawah tiap jawaban: nama file, potongan teks chunk,
+  dan skor kemiripannya. Tersimpan di SQLite, jadi tetap ada setelah refresh.
+- Progres chunking dan embedding tampil di `st.status` saat upload
+- Toggle **Jawab pakai dokumen** di sidebar untuk mematikan RAG dan
+  membandingkan jawaban dengan/tanpa dokumen
+- Menghapus dokumen ikut menghapus chunk-nya dari Qdrant
+
+Ukuran collection Qdrant diambil dari panjang vector yang benar-benar
+dikembalikan API, bukan dari angka di konfigurasi, supaya collection tidak
+pernah dibuat dengan dimensi yang salah.
+
 ## Struktur
 
 ```
@@ -48,6 +84,10 @@ core/config.py          Membaca environment variable
 core/db.py              Koneksi dan skema SQLite
 core/llm.py             Wrapper pemanggilan Groq
 core/ingest.py          Pipeline upload: validasi, parsing, simpan, hapus
+core/chunking.py        Pemecahan teks jadi chunk
+core/embeddings.py      Pemanggilan Gemini Embedding API
+core/vectorstore.py     Qdrant local mode
+core/rag.py             Perekat: index saat upload, retrieve saat bertanya
 .streamlit/config.toml  Tema aplikasi
 ```
 
@@ -59,15 +99,22 @@ core/ingest.py          Pipeline upload: validasi, parsing, simpan, hapus
 | `messages`      | `id`, `conversation_id`, `role`, `content`, `created_at`                     |
 | `documents`     | `id`, `filename`, `filetype`, `filesize`, `char_count`, `status`, `uploaded_at` |
 | `document_text` | `id`, `document_id`, `content`                                               |
+| `message_sources` | `id`, `message_id`, `document_id`, `filename`, `chunk_index`, `score`, `text` |
 
-`messages.conversation_id` dan `document_text.document_id` memakai foreign key
-dengan `ON DELETE CASCADE`, jadi menghapus induknya ikut membersihkan turunannya.
+`messages.conversation_id`, `document_text.document_id`, dan
+`message_sources.message_id` memakai foreign key dengan `ON DELETE CASCADE`,
+jadi menghapus induknya ikut membersihkan turunannya.
+
+`message_sources` menyimpan kutipan yang dipakai untuk menjawab tiap pesan —
+tabel ini di luar spesifikasi tahap 3, ditambahkan supaya expander "Sumber"
+tetap ada setelah halaman di-refresh.
 
 Nilai `documents.status`:
 
 | Status      | Arti                                                  |
 | ----------- | ----------------------------------------------------- |
-| `processed` | teks berhasil diekstrak                                |
+| `indexed`   | teks diekstrak dan chunk-nya sudah masuk Qdrant         |
+| `processed` | teks diekstrak, tapi belum terindeks (embedding gagal) |
 | `no_text`   | file terbaca tapi tidak ada teks (mis. PDF hasil scan) |
 | `pending`   | gambar, ekstraksi isinya menyusul di tahap 4           |
 
@@ -81,7 +128,9 @@ cp .env.example .env          # lalu isi GROQ_API_KEY
 streamlit run app.py
 ```
 
-Ambil API key di <https://console.groq.com/keys>.
+Ambil API key Groq di <https://console.groq.com/keys> dan API key Gemini di
+<https://aistudio.google.com/apikey>. Tanpa `GEMINI_API_KEY` aplikasi tetap
+jalan: dokumen masih diurai dan disimpan, hanya RAG-nya yang mati.
 
 ## Environment variable
 
@@ -94,7 +143,8 @@ Ambil API key di <https://console.groq.com/keys>.
 | `APP_DB_PATH`      | tidak | `data/chat.db`                     |
 
 API key hanya dibaca dari `os.environ` dan tidak pernah ditulis di dalam kode.
-File `.env`, `*.db`, dan folder `data/` sudah masuk `.gitignore`.
+File `.env`, `*.db`, dan folder `data/` (termasuk `data/qdrant`) sudah masuk
+`.gitignore`.
 
 Catatan: `server.maxUploadSize` di `.streamlit/config.toml` sengaja diset 25 MB.
 Batas sebenarnya tetap 5 MB dan divalidasi di `core/ingest.py` — plafon yang

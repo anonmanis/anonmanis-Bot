@@ -22,6 +22,24 @@ SYSTEM_PROMPT = (
     "terang daripada mengarang."
 )
 
+# Context dikirim sebagai TEKS biasa di dalam system prompt; pertanyaan
+# pengguna tetap dikirim apa adanya. Vector tidak pernah ikut dikirim.
+RAG_PROMPT_TEMPLATE = """{base}
+
+Untuk pertanyaan berikut, kamu diberi kutipan dari dokumen yang diunggah pengguna.
+
+ATURAN MENJAWAB:
+- Jawab HANYA berdasarkan kutipan di bawah.
+- Kalau jawabannya tidak ada di kutipan, katakan terus terang bahwa informasinya
+  tidak ada di dokumen yang diunggah. Jangan mengarang dan jangan menambal dari
+  pengetahuan umum.
+- Sebut nama file sumbernya saat menyampaikan fakta dari kutipan.
+- Jawab dengan bahasa yang sama seperti pertanyaan pengguna.
+
+KUTIPAN DOKUMEN:
+{context}
+"""
+
 TITLE_PROMPT = (
     "Buat judul singkat untuk percakapan berdasarkan pesan pertama pengguna. "
     "Aturan: maksimal 6 kata, tanpa tanda kutip, tanpa tanda titik di akhir, "
@@ -62,20 +80,32 @@ def _payload(messages: Sequence[dict[str, Any]]) -> list[dict[str, str]]:
     ]
 
 
+def build_system_prompt(context: str | None = None) -> str:
+    """System prompt biasa, atau versi RAG kalau ada context dokumen."""
+    if not context:
+        return SYSTEM_PROMPT
+    return RAG_PROMPT_TEMPLATE.format(base=SYSTEM_PROMPT, context=context)
+
+
 def stream_chat(
     messages: Sequence[dict[str, Any]],
     *,
+    context: str | None = None,
     temperature: float = 0.6,
     max_tokens: int = 2048,
 ) -> Iterator[str]:
     """Streaming jawaban model, potongan demi potongan.
 
-    Generator ini dipakai langsung oleh ``st.write_stream`` di UI.
+    ``context`` berisi kutipan dokumen sebagai teks biasa. Generator ini
+    dipakai langsung oleh ``st.write_stream`` di UI.
     """
     settings = get_settings()
     stream = get_client().chat.completions.create(
         model=settings.model,
-        messages=[{"role": "system", "content": SYSTEM_PROMPT}, *_payload(messages)],
+        messages=[
+            {"role": "system", "content": build_system_prompt(context)},
+            *_payload(messages),
+        ],
         temperature=temperature,
         max_tokens=max_tokens,
         stream=True,

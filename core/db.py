@@ -60,6 +60,21 @@ CREATE INDEX IF NOT EXISTS idx_document_text_document
 
 CREATE INDEX IF NOT EXISTS idx_documents_uploaded
     ON documents (uploaded_at DESC);
+
+-- Sumber (chunk) yang dipakai untuk menjawab satu pesan asisten. Disimpan
+-- supaya expander "Sumber" tetap ada setelah halaman di-refresh.
+CREATE TABLE IF NOT EXISTS message_sources (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    message_id  INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+    document_id INTEGER,
+    filename    TEXT    NOT NULL,
+    chunk_index INTEGER NOT NULL,
+    score       REAL    NOT NULL,
+    text        TEXT    NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_message_sources_message
+    ON message_sources (message_id);
 """
 
 
@@ -162,8 +177,15 @@ def touch_conversation(conversation_id: int) -> None:
 
 
 def delete_conversation(conversation_id: int) -> None:
-    """Hapus percakapan beserta seluruh pesannya."""
+    """Hapus percakapan beserta seluruh pesan dan sumbernya."""
     with connect() as conn:
+        conn.execute(
+            """
+            DELETE FROM message_sources
+            WHERE message_id IN (SELECT id FROM messages WHERE conversation_id = ?)
+            """,
+            (conversation_id,),
+        )
         conn.execute("DELETE FROM messages WHERE conversation_id = ?", (conversation_id,))
         conn.execute("DELETE FROM conversations WHERE id = ?", (conversation_id,))
 
@@ -262,6 +284,18 @@ def save_document(
         return document_id
 
 
+def set_document_status(document_id: int, status: str) -> None:
+    """Perbarui status dokumen setelah proses lanjutan (mis. pengindeksan).
+
+    Jumlah chunk sengaja tidak disimpan di sini — angka itu dihitung dari
+    Qdrant supaya tidak ada dua sumber kebenaran yang bisa berbeda.
+    """
+    with connect() as conn:
+        conn.execute(
+            "UPDATE documents SET status = ? WHERE id = ?", (status, document_id)
+        )
+
+
 def list_documents() -> list[dict[str, Any]]:
     """Daftar dokumen, yang paling baru diunggah ada di atas."""
     with connect() as conn:
@@ -295,3 +329,46 @@ def delete_document(document_id: int) -> None:
     with connect() as conn:
         conn.execute("DELETE FROM document_text WHERE document_id = ?", (document_id,))
         conn.execute("DELETE FROM documents WHERE id = ?", (document_id,))
+
+
+# --------------------------------------------------------------------------- #
+# Sumber jawaban (chunk RAG yang dipakai untuk satu pesan)
+# --------------------------------------------------------------------------- #
+def save_message_sources(message_id: int, sources: list[dict[str, Any]]) -> None:
+    """Simpan chunk yang dipakai untuk menjawab satu pesan."""
+    if not sources:
+        return
+    with connect() as conn:
+        conn.executemany(
+            """
+            INSERT INTO message_sources
+                (message_id, document_id, filename, chunk_index, score, text)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    message_id,
+                    source.get("document_id"),
+                    str(source.get("filename", "")),
+                    int(source.get("chunk_index", 0)),
+                    float(source.get("score", 0.0)),
+                    str(source.get("text", "")),
+                )
+                for source in sources
+            ],
+        )
+
+
+def list_message_sources(message_id: int) -> list[dict[str, Any]]:
+    """Sumber yang dipakai untuk satu pesan, urut dari skor tertinggi."""
+    with connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT document_id, filename, chunk_index, score, text
+            FROM message_sources
+            WHERE message_id = ?
+            ORDER BY score DESC, id ASC
+            """,
+            (message_id,),
+        ).fetchall()
+    return [dict(row) for row in rows]

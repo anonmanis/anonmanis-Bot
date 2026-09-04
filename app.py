@@ -11,7 +11,7 @@ from typing import Iterable, Iterator
 
 import streamlit as st
 
-from core import db, ingest, llm
+from core import db, ingest, llm, rag, vectorstore
 from core.config import APP_NAME, APP_TAGLINE, get_settings
 
 USER_AVATAR = ":material/person:"
@@ -44,6 +44,7 @@ STATUS_LABELS = {
     ingest.STATUS_PENDING_EXTRACTION: "menunggu tahap 4",
     ingest.STATUS_NO_TEXT: "tanpa teks",
     ingest.STATUS_FAILED: "gagal",
+    ingest.STATUS_PROCESSED: "belum terindeks",
 }
 
 SUGGESTIONS = [
@@ -353,6 +354,97 @@ footer,
     transform: translateY(-1px);
 }
 
+
+/* --- Toggle RAG di sidebar --- */
+.st-key-rag_toggle { padding: 0.5rem 0.6rem 0.1rem; }
+.st-key-rag_toggle label p { font-size: 0.8rem !important; font-weight: 500; }
+
+/* --- Expander "Sumber" di bawah jawaban --- */
+[data-testid="stMainBlockContainer"] [data-testid="stExpander"] {
+    /* 3rem = lebar avatar + jarak, supaya sejajar dengan bubble jawaban */
+    margin: -0.6rem 0 0 3rem;
+    width: calc(100% - 3rem) !important;
+}
+[data-testid="stMainBlockContainer"] [data-testid="stExpander"] details {
+    background: transparent;
+    border: 1px solid var(--nb-border);
+    border-radius: 13px;
+}
+[data-testid="stMainBlockContainer"] [data-testid="stExpander"] summary {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--nb-muted);
+}
+[data-testid="stMainBlockContainer"] [data-testid="stExpander"] summary:hover {
+    color: var(--nb-accent);
+}
+
+.nb-src { padding: 0.55rem 0 0.7rem; border-top: 1px solid var(--nb-border); }
+.nb-src:first-child { border-top: none; padding-top: 0.1rem; }
+.nb-src-head {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.4rem;
+}
+.nb-src-rank {
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+    width: 1.25rem;
+    height: 1.25rem;
+    border-radius: 6px;
+    background: var(--nb-accent-dim);
+    border: 1px solid rgba(124, 92, 255, 0.3);
+    color: var(--nb-accent);
+    font-size: 0.67rem;
+    font-weight: 700;
+}
+.nb-src-file {
+    font-size: 0.79rem;
+    font-weight: 600;
+    color: var(--nb-text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.nb-src-part { font-size: 0.7rem; color: var(--nb-muted); }
+.nb-src-score {
+    margin-left: auto;
+    flex-shrink: 0;
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 0.71rem;
+    color: var(--nb-accent);
+    background: var(--nb-accent-dim);
+    padding: 0.1rem 0.4rem;
+    border-radius: 6px;
+}
+.nb-src-bar {
+    height: 3px;
+    margin-bottom: 0.5rem;
+    border-radius: 99px;
+    background: var(--nb-elevated);
+    overflow: hidden;
+}
+.nb-src-bar > span {
+    display: block;
+    height: 100%;
+    border-radius: 99px;
+    background: linear-gradient(90deg, var(--nb-accent), #9B85FF);
+}
+.nb-src-text {
+    max-height: 7rem;
+    overflow-y: auto;
+    padding: 0.55rem 0.7rem;
+    border-radius: 10px;
+    background: var(--nb-surface);
+    border: 1px solid var(--nb-border);
+    font-size: 0.76rem;
+    line-height: 1.65;
+    color: var(--nb-muted);
+    white-space: pre-wrap;
+    word-break: break-word;
+}
 
 /* --- Bagian dokumen di sidebar --- */
 .st-key-uploader [data-testid="stFileUploaderDropzone"] {
@@ -707,7 +799,7 @@ def render_document_row(document: dict) -> None:
                 "", icon=":material/check:", key=f"confirmdoc_btn_{document_id}",
                 width="stretch", help="Ya, hapus dokumen dan teksnya",
             ):
-                db.delete_document(document_id)
+                ingest.delete_document(document_id)
                 st.session_state.pending_doc_delete = None
                 st.rerun()
         with cancel.container(key=f"canceldoc_{document_id}"):
@@ -720,7 +812,10 @@ def render_document_row(document: dict) -> None:
         return
 
     detail = ingest.type_label(filetype) + " · " + ingest.human_size(document["filesize"])
-    if document["status"] in STATUS_LABELS:
+    if document["status"] == ingest.STATUS_INDEXED:
+        chunks = vectorstore.count_chunks(document_id)
+        detail += f" · {chunks} chunk"
+    elif document["status"] in STATUS_LABELS:
         detail += " · " + STATUS_LABELS[document["status"]]
     else:
         detail += " · " + ingest.thousands(document["char_count"]) + " karakter"
@@ -747,6 +842,53 @@ def render_document_row(document: dict) -> None:
         ):
             st.session_state.pending_doc_delete = document_id
             st.rerun()
+
+
+def rag_enabled() -> bool:
+    """Apakah pencarian dokumen sedang dinyalakan."""
+    return bool(st.session_state.get("rag_on", True)) and get_settings().rag_available
+
+
+def render_rag_controls() -> None:
+    """Toggle RAG plus keterangan kenapa dimatikan kalau belum bisa dipakai.
+
+    Pilihan toggle disimpan di ``rag_on`` — kunci biasa, bukan kunci widget.
+    Streamlit membuang state milik widget yang tidak sempat dirender pada
+    suatu run, dan tombol hapus/pindah percakapan di atas memang memanggil
+    ``st.rerun()`` sebelum toggle ini sempat tampil. Kalau nilainya disimpan
+    di kunci widget, RAG akan menyala sendiri setiap kali itu terjadi.
+    """
+    settings = get_settings()
+    indexed_chunks = vectorstore.count_chunks()
+
+    if not settings.rag_available:
+        st.markdown(
+            '<div class="nb-note">RAG mati: <code>GEMINI_API_KEY</code> belum diset, '
+            "jadi dokumen tidak bisa di-embedding.</div>",
+            unsafe_allow_html=True,
+        )
+        return
+
+    with st.container(key="rag_toggle"):
+        st.session_state.rag_on = st.toggle(
+            "Jawab pakai dokumen",
+            value=st.session_state.get("rag_on", True),
+            key="rag_toggle_widget",
+            disabled=indexed_chunks == 0,
+            help=(
+                "Matikan untuk membandingkan jawaban tanpa dokumen."
+                if indexed_chunks
+                else "Belum ada dokumen terindeks."
+            ),
+        )
+
+    if indexed_chunks:
+        state = "aktif" if st.session_state.rag_on else "nonaktif"
+        st.markdown(
+            f'<div class="nb-note">{indexed_chunks} chunk terindeks di Qdrant · '
+            f"pencarian <strong>{state}</strong>.</div>",
+            unsafe_allow_html=True,
+        )
 
 
 def render_documents_section() -> None:
@@ -787,9 +929,11 @@ def render_documents_section() -> None:
     if documents:
         st.markdown(
             '<div class="nb-note">File asli tidak disimpan — hanya teks hasil '
-            "ekstraksinya. Dokumen belum dipakai untuk menjawab; itu bagian tahap RAG.</div>",
+            "ekstraksi dan vector-nya.</div>",
             unsafe_allow_html=True,
         )
+
+    render_rag_controls()
 
 
 def render_conversation_row(conv: dict) -> None:
@@ -884,6 +1028,32 @@ def render_thread_header(conversation: dict, message_count: int) -> None:
     )
 
 
+def render_sources(sources: list[dict]) -> None:
+    """Expander "Sumber": nama file, potongan teks, dan skor kemiripannya."""
+    if not sources:
+        return
+    files = sorted({str(source["filename"]) for source in sources})
+    summary = f"Sumber · {len(sources)} kutipan dari {len(files)} file"
+    with st.expander(summary, expanded=False):
+        for number, source in enumerate(sources, start=1):
+            score = float(source["score"])
+            st.markdown(
+                f"""
+                <div class="nb-src">
+                    <div class="nb-src-head">
+                        <span class="nb-src-rank">{number}</span>
+                        <span class="nb-src-file">{escape(str(source["filename"]))}</span>
+                        <span class="nb-src-part">bagian {int(source["chunk_index"]) + 1}</span>
+                        <span class="nb-src-score">{score:.3f}</span>
+                    </div>
+                    <div class="nb-src-bar"><span style="width:{max(0.0, min(score, 1.0)) * 100:.1f}%"></span></div>
+                    <div class="nb-src-text">{escape(str(source["text"]))}</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+
 def render_message(role: str, content: str, key: str | int = "live") -> None:
     """Render satu bubble chat.
 
@@ -895,20 +1065,63 @@ def render_message(role: str, content: str, key: str | int = "live") -> None:
     with st.container(key=f"msg-{role}-{key}"):
         with st.chat_message(role, avatar=avatar):
             st.markdown(content)
+        # Expander sumber sengaja di luar bubble: kalau di dalam, lebarnya
+        # menembus batas bubble dan menutupi teks jawaban.
+        if role == "assistant" and isinstance(key, int):
+            render_sources(db.list_message_sources(key))
 
 
-def generate_reply(conversation_id: int) -> None:
+def retrieve_sources(question: str) -> tuple[list[dict], str | None]:
+    """Cari chunk pendukung di Qdrant. Kembalikan (sumber, pesan error)."""
+    if not rag_enabled():
+        return [], None
+    try:
+        hits = rag.retrieve(question)
+    except Exception as exc:  # noqa: BLE001 - pencarian gagal tidak boleh membatalkan chat
+        return [], f"Pencarian dokumen gagal, jawaban dibuat tanpa dokumen: {exc}"
+    return [
+        {
+            "document_id": hit.document_id,
+            "filename": hit.filename,
+            "chunk_index": hit.chunk_index,
+            "score": hit.score,
+            "text": hit.text,
+        }
+        for hit in hits
+    ], None
+
+
+def generate_reply(conversation_id: int, question: str | None = None) -> None:
     """Stream jawaban asisten untuk percakapan, lalu simpan hasilnya.
+
+    Kalau RAG aktif, pertanyaan dicari dulu di Qdrant dan kutipan yang
+    ketemu dikirim ke Groq sebagai teks biasa di dalam system prompt.
 
     Pesan error disimpan di ``session_state`` supaya tetap terlihat setelah
     ``st.rerun()`` — kalau ditampilkan langsung, alert-nya akan ikut terhapus.
     """
+    messages = db.list_messages(conversation_id)
+    if question is None:
+        question = next(
+            (m["content"] for m in reversed(messages) if m["role"] == "user"), ""
+        )
+
+    sources: list[dict] = []
+    retrieval_error: str | None = None
+    if question:
+        with st.spinner("Mencari di dokumen…"):
+            sources, retrieval_error = retrieve_sources(question)
+
+    context = rag.build_context(
+        [vectorstore.SearchHit(**source) for source in sources]
+    ) if sources else None
+
     buffer: list[str] = []
     error: str | None = None
 
     with st.container(key="msg-assistant-live"), st.chat_message("assistant", avatar=BOT_AVATAR):
         try:
-            st.write_stream(tee(llm.stream_chat(db.list_messages(conversation_id)), buffer))
+            st.write_stream(tee(llm.stream_chat(messages, context=context), buffer))
         except llm.LLMConfigError as exc:
             error = str(exc)
         except Exception as exc:  # noqa: BLE001 - error apa pun tetap dilaporkan ke pengguna
@@ -916,9 +1129,12 @@ def generate_reply(conversation_id: int) -> None:
 
     answer = "".join(buffer).strip()
     if answer:
-        db.add_message(conversation_id, "assistant", answer)
+        message_id = db.add_message(conversation_id, "assistant", answer)
+        db.save_message_sources(message_id, sources)
     if error:
         st.session_state.last_error = error
+    elif retrieval_error:
+        st.session_state.last_error = retrieval_error
 
 
 def handle_prompt(prompt: str) -> None:
@@ -932,7 +1148,7 @@ def handle_prompt(prompt: str) -> None:
 
     db.add_message(conv_id, "user", prompt)
     render_message("user", prompt)
-    generate_reply(conv_id)
+    generate_reply(conv_id, question=prompt)
 
     if is_new_conversation:
         db.rename_conversation(conv_id, llm.generate_title(prompt))
@@ -958,6 +1174,7 @@ def main() -> None:
     st.session_state.setdefault("pending_delete", None)
     st.session_state.setdefault("pending_doc_delete", None)
     st.session_state.setdefault("upload_round", 0)
+    st.session_state.setdefault("rag_on", True)
 
     conv_id = active_conversation_id()
     db.delete_empty_conversations(except_id=conv_id)

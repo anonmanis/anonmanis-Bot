@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from core import db
+from core import db, rag
 
 # --------------------------------------------------------------------------- #
 # Batasan
@@ -46,7 +46,8 @@ TYPE_LABELS = {
 }
 
 # Status yang mungkin tersimpan di kolom ``documents.status``
-STATUS_PROCESSED = "processed"          # teks berhasil diekstrak
+STATUS_INDEXED = "indexed"             # teks diekstrak dan chunk-nya masuk Qdrant
+STATUS_PROCESSED = "processed"          # teks diekstrak, tapi belum terindeks
 STATUS_NO_TEXT = "no_text"             # terbaca, tapi tidak ada teks di dalamnya
 STATUS_PENDING_EXTRACTION = "pending"  # gambar, ekstraksi isi menyusul di tahap 4
 STATUS_FAILED = "failed"               # file tidak bisa dibaca
@@ -62,6 +63,7 @@ class IngestResult:
     status: str = ""
     char_count: int = 0
     document_id: int | None = None
+    chunk_count: int = 0
 
 
 class RejectedFile(Exception):
@@ -104,6 +106,18 @@ def allowed_types_sentence() -> str:
 
 def remaining_slots() -> int:
     return max(0, MAX_DOCUMENTS - db.count_documents())
+
+
+def _short_reason(exc: Exception) -> str:
+    """Ringkas pesan error panjang dari SDK agar muat di sidebar."""
+    reason = str(exc).strip().splitlines()[0] if str(exc).strip() else exc.__class__.__name__
+    return reason if len(reason) <= 90 else reason[:87] + "…"
+
+
+def delete_document(document_id: int) -> None:
+    """Hapus dokumen: chunk di Qdrant dulu, baru metadata dan teksnya di SQLite."""
+    rag.remove_document(document_id)
+    db.delete_document(document_id)
 
 
 def _clean_text(raw: str) -> str:
@@ -308,12 +322,38 @@ def ingest(
             text=text,
         )
 
+        # Tahap 5 — file asli dihapus dari disk, sebelum pekerjaan embedding
+        # yang bisa memakan waktu. Blok finally di bawah tetap jadi jaring
+        # pengaman kalau tahap sebelumnya sempat gagal.
+        step("Menghapus file asli dari disk…")
+        temp_path.unlink(missing_ok=True)
+        temp_path = None
+
+        # Tahap 6 — chunking, embedding, lalu simpan vector-nya ke Qdrant
+        chunk_count = 0
+        index_note = ""
+        if text:
+            try:
+                chunk_count = rag.index_document(
+                    document_id, filename, text, progress=step
+                )
+                if chunk_count:
+                    status = STATUS_INDEXED
+                    db.set_document_status(document_id, status)
+            except Exception as exc:  # noqa: BLE001 - indeks gagal, dokumen tetap tersimpan
+                index_note = f" Belum terindeks untuk RAG: {_short_reason(exc)}"
+
         if status == STATUS_PENDING_EXTRACTION:
             message = "tersimpan sebagai metadata, isinya menyusul di tahap 4."
         elif status == STATUS_NO_TEXT:
             message = "tersimpan, tapi tidak ada teks di dalamnya."
+        elif status == STATUS_INDEXED:
+            message = (
+                f"terindeks, {thousands(len(text))} karakter "
+                f"jadi {chunk_count} chunk."
+            )
         else:
-            message = f"diproses, {thousands(len(text))} karakter tersimpan."
+            message = f"diproses, {thousands(len(text))} karakter tersimpan.{index_note}"
 
         return IngestResult(
             filename=filename,
@@ -322,6 +362,7 @@ def ingest(
             status=status,
             char_count=len(text),
             document_id=document_id,
+            chunk_count=chunk_count,
         )
 
     except RejectedFile as exc:
@@ -336,7 +377,8 @@ def ingest(
             status=STATUS_FAILED,
         )
     finally:
-        # Tahap 5 — file asli dihapus dari disk, apa pun hasil tahap sebelumnya
+        # Jaring pengaman: kalau pipeline berhenti sebelum tahap 5, file
+        # sementaranya tetap dihapus.
         if temp_path is not None:
             step("Menghapus file asli dari disk…")
             temp_path.unlink(missing_ok=True)
