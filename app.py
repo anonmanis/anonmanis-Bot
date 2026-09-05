@@ -1,4 +1,4 @@
-"""Nimbus — chatbot AI berbasis Streamlit + Groq.
+"""anonmanis-Chat, chatbot AI berbasis Streamlit + Groq.
 
 Entry point aplikasi. Tahap ini fokus ke chat dasar: percakapan tersimpan
 di SQLite, jawaban di-stream dari Groq, judul dibuat otomatis.
@@ -68,41 +68,41 @@ CUSTOM_CSS = """
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
 
 :root {
-    --nb-bg:        #0B0D12;
-    --nb-surface:   #12151E;
-    --nb-elevated:  #171B27;
-    --nb-border:    #242A3A;
-    --nb-text:      #E9EBF2;
-    --nb-muted:     #8A92A6;
-    --nb-accent:    #7C5CFF;
-    --nb-accent-deep: #4B31D6;
-    --nb-accent-soft: #9B85FF;
-    --nb-on-accent: #FFFFFF;
-    --nb-danger:    #FF8B8B;
+    --ac-bg:        #0B0D12;
+    --ac-surface:   #12151E;
+    --ac-elevated:  #171B27;
+    --ac-border:    #242A3A;
+    --ac-text:      #E9EBF2;
+    --ac-muted:     #8A92A6;
+    --ac-accent:    #7C5CFF;
+    --ac-accent-deep: #4B31D6;
+    --ac-accent-soft: #9B85FF;
+    --ac-on-accent: #FFFFFF;
+    --ac-danger:    #FF8B8B;
 
     /* Tiga tingkat transparansi aksen dipakai konsisten:
        dim untuk isian, line untuk garis tepi, edge untuk tepi aktif. */
-    --nb-accent-dim:  rgba(124, 92, 255, 0.14);
-    --nb-accent-line: rgba(124, 92, 255, 0.30);
-    --nb-accent-edge: rgba(124, 92, 255, 0.55);
+    --ac-accent-dim:  rgba(124, 92, 255, 0.14);
+    --ac-accent-line: rgba(124, 92, 255, 0.30);
+    --ac-accent-edge: rgba(124, 92, 255, 0.55);
 
     /* Skala tipografi */
-    --nb-fs-2xs:  0.68rem;
-    --nb-fs-xs:   0.72rem;
-    --nb-fs-sm:   0.78rem;
-    --nb-fs-base: 0.83rem;
-    --nb-fs-md:   0.95rem;
-    --nb-fs-lg:   1.05rem;
+    --ac-fs-2xs:  0.68rem;
+    --ac-fs-xs:   0.72rem;
+    --ac-fs-sm:   0.78rem;
+    --ac-fs-base: 0.83rem;
+    --ac-fs-md:   0.95rem;
+    --ac-fs-lg:   1.05rem;
 
     /* Skala jarak */
-    --nb-gap-xs: 0.35rem;
-    --nb-gap-sm: 0.55rem;
-    --nb-gap-md: 0.85rem;
-    --nb-gap-lg: 1.4rem;
+    --ac-gap-xs: 0.35rem;
+    --ac-gap-sm: 0.55rem;
+    --ac-gap-md: 0.85rem;
+    --ac-gap-lg: 1.4rem;
 
-    --nb-radius:    18px;
-    --nb-radius-sm: 11px;
-    --nb-chat-width: 46rem;
+    --ac-radius:    18px;
+    --ac-radius-sm: 11px;
+    --ac-chat-width: 46rem;
 }
 
 html, body, .stApp, [data-testid="stAppViewContainer"] {
@@ -128,16 +128,16 @@ footer,
 /* --- Lebar area baca dibatasi walau layout wide --- */
 .stMainBlockContainer,
 [data-testid="stMainBlockContainer"] {
-    max-width: var(--nb-chat-width) !important;
+    max-width: var(--ac-chat-width) !important;
     padding-top: 3.25rem !important;
     padding-bottom: 4rem !important;
 }
 [data-testid="stBottomBlockContainer"] {
-    max-width: calc(var(--nb-chat-width) + 2rem) !important;
+    max-width: calc(var(--ac-chat-width) + 2rem) !important;
     padding-bottom: 1.25rem !important;
 }
 [data-testid="stBottom"] > div {
-    background: linear-gradient(to bottom, rgba(11, 13, 18, 0), var(--nb-bg) 22%);
+    background: linear-gradient(to bottom, rgba(11, 13, 18, 0), var(--ac-bg) 22%);
 }
 
 /* --- Bubble chat --- */
@@ -148,12 +148,12 @@ footer,
     gap: 0.85rem;
 }
 [data-testid="stChatMessage"] [data-testid="stChatMessageContent"] {
-    background: var(--nb-surface);
-    border: 1px solid var(--nb-border);
-    border-radius: var(--nb-radius);
+    background: var(--ac-surface);
+    border: 1px solid var(--ac-border);
+    border-radius: var(--ac-radius);
     padding: 0.95rem 1.2rem;
     line-height: 1.75;
-    font-size: var(--nb-fs-md);
+    font-size: var(--ac-fs-md);
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.28);
     overflow-x: auto;
 }
@@ -162,8 +162,8 @@ footer,
 }
 /* Pesan pengguna diberi warna aksen yang lembut */
 [class*="st-key-msg-user-"] [data-testid="stChatMessageContent"] {
-    background: var(--nb-accent-dim);
-    border-color: var(--nb-accent-line);
+    background: var(--ac-accent-dim);
+    border-color: var(--ac-accent-line);
 }
 [class*="st-key-msg-"] { gap: 0 !important; }
 
@@ -171,19 +171,19 @@ footer,
 [data-testid="stChatMessageAvatarCustom"] {
     width: 2.15rem !important;
     height: 2.15rem !important;
-    border-radius: var(--nb-radius-sm) !important;
-    border: 1px solid var(--nb-border);
+    border-radius: var(--ac-radius-sm) !important;
+    border: 1px solid var(--ac-border);
     flex-shrink: 0;
 }
 [class*="st-key-msg-assistant-"] [data-testid="stChatMessageAvatarCustom"] {
-    background: linear-gradient(140deg, var(--nb-accent), var(--nb-accent-deep));
-    border-color: var(--nb-accent-edge);
-    color: var(--nb-on-accent);
-    box-shadow: 0 0 0 3px var(--nb-accent-dim);
+    background: linear-gradient(140deg, var(--ac-accent), var(--ac-accent-deep));
+    border-color: var(--ac-accent-edge);
+    color: var(--ac-on-accent);
+    box-shadow: 0 0 0 3px var(--ac-accent-dim);
 }
 [class*="st-key-msg-user-"] [data-testid="stChatMessageAvatarCustom"] {
-    background: var(--nb-elevated);
-    color: var(--nb-muted);
+    background: var(--ac-elevated);
+    color: var(--ac-muted);
 }
 [data-testid="stChatMessageAvatarCustom"] [data-testid="stIconMaterial"] {
     font-size: 1.15rem;
@@ -191,93 +191,93 @@ footer,
 
 /* --- Kotak input chat --- */
 [data-testid="stChatInput"] {
-    background: var(--nb-surface);
-    border: 1px solid var(--nb-border);
+    background: var(--ac-surface);
+    border: 1px solid var(--ac-border);
     border-radius: 16px;
     box-shadow: 0 8px 28px rgba(0, 0, 0, 0.4);
 }
 [data-testid="stChatInput"]:focus-within {
-    border-color: var(--nb-accent-edge);
-    box-shadow: 0 0 0 3px var(--nb-accent-dim), 0 8px 28px rgba(0, 0, 0, 0.4);
+    border-color: var(--ac-accent-edge);
+    box-shadow: 0 0 0 3px var(--ac-accent-dim), 0 8px 28px rgba(0, 0, 0, 0.4);
 }
-[data-testid="stChatInput"] textarea::placeholder { color: var(--nb-muted); }
+[data-testid="stChatInput"] textarea::placeholder { color: var(--ac-muted); }
 
 /* --- Sidebar --- */
 /* Sidebar dilebarkan dari default 300px: sekarang menampung daftar dokumen
    dengan nama, tipe, ukuran, jumlah karakter, dan jam unggah dalam satu baris. */
 [data-testid="stSidebar"] {
-    border-right: 1px solid var(--nb-border);
+    border-right: 1px solid var(--ac-border);
     width: 21rem !important;
 }
 [data-testid="stSidebar"] > div { width: 21rem; }
 [data-testid="stSidebarContent"] { padding: 1.4rem 0.9rem 1rem; }
 [data-testid="stSidebar"] hr {
     margin: 0.9rem 0;
-    border-color: var(--nb-border);
+    border-color: var(--ac-border);
     opacity: 0.75;
 }
 [data-testid="stSidebar"] [data-testid="stVerticalBlock"] { gap: 0.35rem; }
 
-.nb-brand {
+.ac-brand {
     display: flex;
     align-items: center;
     gap: 0.7rem;
     padding: 0.1rem 0.35rem 0.35rem;
 }
-.nb-brand-mark {
+.ac-brand-mark {
     display: grid;
     place-items: center;
     width: 2.35rem;
     height: 2.35rem;
     border-radius: 13px;
-    background: linear-gradient(140deg, var(--nb-accent), var(--nb-accent-deep));
-    color: var(--nb-on-accent);
+    background: linear-gradient(140deg, var(--ac-accent), var(--ac-accent-deep));
+    color: var(--ac-on-accent);
     font-size: 1.1rem;
     font-weight: 700;
-    box-shadow: 0 4px 16px var(--nb-accent-line);
+    box-shadow: 0 4px 16px var(--ac-accent-line);
 }
-.nb-brand-name {
-    font-size: var(--nb-fs-lg);
+.ac-brand-name {
+    font-size: var(--ac-fs-lg);
     font-weight: 700;
     letter-spacing: -0.02em;
     line-height: 1.2;
 }
-.nb-brand-sub { font-size: var(--nb-fs-sm); color: var(--nb-muted); }
+.ac-brand-sub { font-size: var(--ac-fs-sm); color: var(--ac-muted); }
 
-.nb-section {
+.ac-section {
     display: flex;
     align-items: center;
     justify-content: space-between;
     padding: 0.25rem 0.5rem 0.4rem;
-    font-size: var(--nb-fs-2xs);
+    font-size: var(--ac-fs-2xs);
     font-weight: 700;
     letter-spacing: 0.11em;
     text-transform: uppercase;
-    color: var(--nb-muted);
+    color: var(--ac-muted);
 }
-.nb-section span.nb-count {
+.ac-section span.ac-count {
     letter-spacing: 0;
     font-weight: 600;
-    color: var(--nb-muted);
+    color: var(--ac-muted);
     opacity: 0.75;
 }
-.nb-hint {
+.ac-hint {
     padding: 0.7rem 0.6rem;
-    font-size: var(--nb-fs-sm);
+    font-size: var(--ac-fs-sm);
     line-height: 1.6;
-    color: var(--nb-muted);
+    color: var(--ac-muted);
 }
-.nb-foot {
+.ac-foot {
     padding: 0.55rem 0.6rem 0;
-    font-size: var(--nb-fs-xs);
-    color: var(--nb-muted);
+    font-size: var(--ac-fs-xs);
+    color: var(--ac-muted);
     line-height: 1.7;
 }
-.nb-foot code {
+.ac-foot code {
     font-family: 'JetBrains Mono', ui-monospace, monospace;
-    font-size: var(--nb-fs-xs);
-    color: var(--nb-accent);
-    background: var(--nb-accent-dim);
+    font-size: var(--ac-fs-xs);
+    color: var(--ac-accent);
+    background: var(--ac-accent-dim);
     padding: 0.1rem 0.35rem;
     border-radius: 6px;
 }
@@ -287,7 +287,7 @@ footer,
     justify-content: flex-start !important;
     font-weight: 500;
     padding: 0.45rem 0.7rem;
-    border-radius: var(--nb-radius-sm) !important;
+    border-radius: var(--ac-radius-sm) !important;
 }
 [data-testid="stSidebar"] [data-testid="stButton"] button [data-testid="stMarkdownContainer"] {
     width: 100%;
@@ -300,8 +300,8 @@ footer,
     max-width: 100%;
 }
 [data-testid="stSidebar"] [data-testid="stBaseButton-tertiary"]:hover {
-    background: var(--nb-surface);
-    color: var(--nb-text);
+    background: var(--ac-surface);
+    color: var(--ac-text);
 }
 [data-testid="stSidebar"] .st-key-new_chat { margin-top: 0.55rem; }
 [data-testid="stSidebar"] .st-key-new_chat button {
@@ -309,18 +309,18 @@ footer,
     border-radius: 999px !important;
     font-weight: 600;
     padding: 0.55rem 0.9rem;
-    box-shadow: 0 4px 14px var(--nb-accent-line);
+    box-shadow: 0 4px 14px var(--ac-accent-line);
 }
 [data-testid="stSidebar"] [class*="st-key-del_"] button,
 [data-testid="stSidebar"] [class*="st-key-confirm_"] button,
 [data-testid="stSidebar"] [class*="st-key-cancel_"] button {
     justify-content: center !important;
     padding: 0.45rem !important;
-    color: var(--nb-muted);
+    color: var(--ac-muted);
 }
 [data-testid="stSidebar"] [class*="st-key-del_"] button:hover,
 [data-testid="stSidebar"] [class*="st-key-confirm_"] button:hover {
-    color: var(--nb-danger);
+    color: var(--ac-danger);
     background: rgba(255, 139, 139, 0.12);
 }
 
@@ -331,65 +331,65 @@ footer,
     justify-content: center;
     min-height: 66vh;
 }
-.nb-empty { padding: 0 0 1.75rem; text-align: center; }
-.nb-empty-mark {
+.ac-empty { padding: 0 0 1.75rem; text-align: center; }
+.ac-empty-mark {
     display: inline-grid;
     place-items: center;
     width: 3.6rem;
     height: 3.6rem;
     margin-bottom: 1.4rem;
     border-radius: 20px;
-    background: linear-gradient(140deg, var(--nb-accent), var(--nb-accent-deep));
-    color: var(--nb-on-accent);
+    background: linear-gradient(140deg, var(--ac-accent), var(--ac-accent-deep));
+    color: var(--ac-on-accent);
     font-size: 1.65rem;
     font-weight: 700;
-    box-shadow: 0 10px 34px var(--nb-accent-line);
+    box-shadow: 0 10px 34px var(--ac-accent-line);
 }
-.nb-empty h1 {
+.ac-empty h1 {
     margin: 0 0 0.6rem;
     font-size: 1.85rem;
     font-weight: 700;
     letter-spacing: -0.035em;
 }
-.nb-empty p {
+.ac-empty p {
     max-width: 30rem;
     margin: 0 auto;
-    color: var(--nb-muted);
-    font-size: var(--nb-fs-md);
+    color: var(--ac-muted);
+    font-size: var(--ac-fs-md);
     line-height: 1.75;
 }
-.nb-empty-label {
+.ac-empty-label {
     margin: 1.6rem 0 0.9rem;
-    font-size: var(--nb-fs-2xs);
+    font-size: var(--ac-fs-2xs);
     font-weight: 700;
     letter-spacing: 0.11em;
     text-transform: uppercase;
-    color: var(--nb-muted);
+    color: var(--ac-muted);
     text-align: center;
 }
 .st-key-suggestions .stButton > button {
     width: 100%;
     min-height: 3.1rem;
     border-radius: 14px;
-    background: var(--nb-surface);
-    border: 1px solid var(--nb-border);
-    color: var(--nb-text);
-    font-size: var(--nb-fs-base);
+    background: var(--ac-surface);
+    border: 1px solid var(--ac-border);
+    color: var(--ac-text);
+    font-size: var(--ac-fs-base);
     font-weight: 500;
     line-height: 1.4;
     transition: border-color 0.15s ease, transform 0.15s ease;
 }
 .st-key-suggestions .stButton > button:hover {
-    border-color: var(--nb-accent-edge);
-    background: var(--nb-elevated);
-    color: var(--nb-text);
+    border-color: var(--ac-accent-edge);
+    background: var(--ac-elevated);
+    color: var(--ac-text);
     transform: translateY(-1px);
 }
 
 
 /* --- Toggle RAG di sidebar --- */
 .st-key-rag_toggle { padding: 0.5rem 0.6rem 0.1rem; }
-.st-key-rag_toggle label p { font-size: var(--nb-fs-sm) !important; font-weight: 500; }
+.st-key-rag_toggle label p { font-size: var(--ac-fs-sm) !important; font-weight: 500; }
 
 /* --- Expander "Sumber" di bawah jawaban --- */
 [data-testid="stMainBlockContainer"] [data-testid="stExpander"] {
@@ -399,81 +399,81 @@ footer,
 }
 [data-testid="stMainBlockContainer"] [data-testid="stExpander"] details {
     background: transparent;
-    border: 1px solid var(--nb-border);
+    border: 1px solid var(--ac-border);
     border-radius: 13px;
 }
 [data-testid="stMainBlockContainer"] [data-testid="stExpander"] summary {
-    font-size: var(--nb-fs-sm);
+    font-size: var(--ac-fs-sm);
     font-weight: 600;
-    color: var(--nb-muted);
+    color: var(--ac-muted);
 }
 [data-testid="stMainBlockContainer"] [data-testid="stExpander"] summary:hover {
-    color: var(--nb-accent);
+    color: var(--ac-accent);
 }
 
-.nb-src { padding: 0.55rem 0 0.7rem; border-top: 1px solid var(--nb-border); }
-.nb-src:first-child { border-top: none; padding-top: 0.1rem; }
-.nb-src-head {
+.ac-src { padding: 0.55rem 0 0.7rem; border-top: 1px solid var(--ac-border); }
+.ac-src:first-child { border-top: none; padding-top: 0.1rem; }
+.ac-src-head {
     display: flex;
     align-items: center;
     gap: 0.5rem;
     margin-bottom: 0.4rem;
 }
-.nb-src-rank {
+.ac-src-rank {
     display: grid;
     place-items: center;
     flex-shrink: 0;
     width: 1.25rem;
     height: 1.25rem;
     border-radius: 6px;
-    background: var(--nb-accent-dim);
-    border: 1px solid var(--nb-accent-line);
-    color: var(--nb-accent);
-    font-size: var(--nb-fs-2xs);
+    background: var(--ac-accent-dim);
+    border: 1px solid var(--ac-accent-line);
+    color: var(--ac-accent);
+    font-size: var(--ac-fs-2xs);
     font-weight: 700;
 }
-.nb-src-file {
-    font-size: var(--nb-fs-sm);
+.ac-src-file {
+    font-size: var(--ac-fs-sm);
     font-weight: 600;
-    color: var(--nb-text);
+    color: var(--ac-text);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
-.nb-src-part { font-size: var(--nb-fs-xs); color: var(--nb-muted); }
-.nb-src-score {
+.ac-src-part { font-size: var(--ac-fs-xs); color: var(--ac-muted); }
+.ac-src-score {
     margin-left: auto;
     flex-shrink: 0;
     font-family: 'JetBrains Mono', ui-monospace, monospace;
-    font-size: var(--nb-fs-xs);
-    color: var(--nb-accent);
-    background: var(--nb-accent-dim);
+    font-size: var(--ac-fs-xs);
+    color: var(--ac-accent);
+    background: var(--ac-accent-dim);
     padding: 0.1rem 0.4rem;
     border-radius: 6px;
 }
-.nb-src-bar {
+.ac-src-bar {
     height: 3px;
     margin-bottom: 0.5rem;
     border-radius: 99px;
-    background: var(--nb-elevated);
+    background: var(--ac-elevated);
     overflow: hidden;
 }
-.nb-src-bar > span {
+.ac-src-bar > span {
     display: block;
     height: 100%;
     border-radius: 99px;
-    background: linear-gradient(90deg, var(--nb-accent), var(--nb-accent-soft));
+    background: linear-gradient(90deg, var(--ac-accent), var(--ac-accent-soft));
 }
-.nb-src-text {
+.ac-src-text {
     max-height: 7rem;
     overflow-y: auto;
     padding: 0.55rem 0.7rem;
     border-radius: 10px;
-    background: var(--nb-surface);
-    border: 1px solid var(--nb-border);
-    font-size: var(--nb-fs-sm);
+    background: var(--ac-surface);
+    border: 1px solid var(--ac-border);
+    font-size: var(--ac-fs-sm);
     line-height: 1.65;
-    color: var(--nb-muted);
+    color: var(--ac-muted);
     white-space: pre-wrap;
     word-break: break-word;
 }
@@ -481,84 +481,84 @@ footer,
 /* --- Panel "Tentang" --- */
 .st-key-about [data-testid="stExpander"] { margin: 0; width: auto !important; }
 .st-key-about [data-testid="stExpander"] details {
-    background: var(--nb-surface);
-    border: 1px solid var(--nb-border);
+    background: var(--ac-surface);
+    border: 1px solid var(--ac-border);
     border-radius: 12px;
 }
 .st-key-about [data-testid="stExpander"] summary {
-    font-size: var(--nb-fs-sm);
+    font-size: var(--ac-fs-sm);
     font-weight: 600;
-    color: var(--nb-muted);
+    color: var(--ac-muted);
 }
-.nb-about p { margin: 0 0 var(--nb-gap-md); }
-.nb-about-lead {
-    font-size: var(--nb-fs-sm);
+.ac-about p { margin: 0 0 var(--ac-gap-md); }
+.ac-about-lead {
+    font-size: var(--ac-fs-sm);
     line-height: 1.7;
-    color: var(--nb-text);
+    color: var(--ac-text);
 }
-.nb-about-flow {
+.ac-about-flow {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: 0.3rem;
-    margin-bottom: var(--nb-gap-sm);
+    margin-bottom: var(--ac-gap-sm);
 }
-.nb-about-flow span {
+.ac-about-flow span {
     padding: 0.16rem 0.5rem;
     border-radius: 7px;
-    background: var(--nb-accent-dim);
-    border: 1px solid var(--nb-accent-line);
-    color: var(--nb-text);
-    font-size: var(--nb-fs-2xs);
+    background: var(--ac-accent-dim);
+    border: 1px solid var(--ac-accent-line);
+    color: var(--ac-text);
+    font-size: var(--ac-fs-2xs);
     font-weight: 500;
     white-space: nowrap;
 }
-.nb-about-flow i {
+.ac-about-flow i {
     width: 0.55rem;
     height: 1px;
-    background: var(--nb-border);
+    background: var(--ac-border);
     flex-shrink: 0;
 }
-.nb-about-table {
+.ac-about-table {
     width: 100%;
-    margin: var(--nb-gap-md) 0;
+    margin: var(--ac-gap-md) 0;
     border-collapse: collapse;
-    font-size: var(--nb-fs-xs);
+    font-size: var(--ac-fs-xs);
 }
-.nb-about-table td {
+.ac-about-table td {
     padding: 0.28rem 0;
-    border-bottom: 1px solid var(--nb-border);
+    border-bottom: 1px solid var(--ac-border);
     vertical-align: top;
 }
-.nb-about-table tr:last-child td { border-bottom: none; }
-.nb-about-table td:first-child { color: var(--nb-muted); width: 42%; }
-.nb-about-table code {
+.ac-about-table tr:last-child td { border-bottom: none; }
+.ac-about-table td:first-child { color: var(--ac-muted); width: 42%; }
+.ac-about-table code {
     font-family: 'JetBrains Mono', ui-monospace, monospace;
-    font-size: var(--nb-fs-2xs);
-    color: var(--nb-accent);
-    background: var(--nb-accent-dim);
+    font-size: var(--ac-fs-2xs);
+    color: var(--ac-accent);
+    background: var(--ac-accent-dim);
     padding: 0.05rem 0.3rem;
     border-radius: 5px;
     word-break: break-all;
 }
-.nb-about-foot {
-    font-size: var(--nb-fs-xs) !important;
+.ac-about-foot {
+    font-size: var(--ac-fs-xs) !important;
     line-height: 1.7;
-    color: var(--nb-muted);
+    color: var(--ac-muted);
     margin-bottom: 0 !important;
 }
 
 /* --- Layar tablet: sidebar dipersempit, area chat ikut menyesuaikan --- */
 @media (max-width: 1180px) {
-    :root { --nb-chat-width: 40rem; }
+    :root { --ac-chat-width: 40rem; }
     [data-testid="stSidebar"],
     [data-testid="stSidebar"] > div { width: 18.5rem !important; }
 }
 
 @media (max-width: 900px) {
     :root {
-        --nb-chat-width: 100%;
-        --nb-radius: 15px;
+        --ac-chat-width: 100%;
+        --ac-radius: 15px;
     }
     [data-testid="stSidebar"],
     [data-testid="stSidebar"] > div { width: 17.5rem !important; }
@@ -578,9 +578,9 @@ footer,
         flex: 1 1 46% !important;
         min-width: 46% !important;
     }
-    .nb-empty { padding-top: 1rem; }
-    .nb-empty h1 { font-size: 1.55rem; }
-    .nb-empty p { font-size: var(--nb-fs-md); }
+    .ac-empty { padding-top: 1rem; }
+    .ac-empty h1 { font-size: 1.55rem; }
+    .ac-empty p { font-size: var(--ac-fs-md); }
     .st-key-empty_wrap { min-height: 52vh; }
     /* Expander sumber ikut melebar penuh di layar sempit */
     [data-testid="stMainBlockContainer"] [data-testid="stExpander"] {
@@ -594,24 +594,24 @@ footer,
     [data-testid="stChatMessage"] { gap: 0.6rem; }
     [data-testid="stChatMessage"] [data-testid="stChatMessageContent"] {
         padding: 0.8rem 0.95rem;
-        font-size: var(--nb-fs-md);
+        font-size: var(--ac-fs-md);
     }
-    .nb-src-head { flex-wrap: wrap; }
-    .nb-src-score { margin-left: 0; }
+    .ac-src-head { flex-wrap: wrap; }
+    .ac-src-score { margin-left: 0; }
 }
 
 /* --- Bagian dokumen di sidebar --- */
 .st-key-uploader [data-testid="stFileUploaderDropzone"] {
-    background: var(--nb-surface);
-    border: 1px dashed var(--nb-border);
+    background: var(--ac-surface);
+    border: 1px dashed var(--ac-border);
     border-radius: 14px;
     padding: 0.7rem 0.8rem;
     min-height: 0;
     transition: border-color 0.15s ease, background 0.15s ease;
 }
 .st-key-uploader [data-testid="stFileUploaderDropzone"]:hover {
-    border-color: var(--nb-accent-edge);
-    background: var(--nb-elevated);
+    border-color: var(--ac-accent-edge);
+    background: var(--ac-elevated);
 }
 /* Streamlit menulis plafon server (25MB) di dropzone. Batas sebenarnya 5 MB
    dan divalidasi di core/ingest.py, jadi teksnya diganti agar tidak
@@ -622,121 +622,121 @@ footer,
 }
 .st-key-uploader [data-testid="stFileUploaderDropzoneInstructions"] span::after {
     content: "PDF · DOCX · XLSX · PPTX · PNG · JPG";
-    font-size: var(--nb-fs-xs);
-    color: var(--nb-muted);
+    font-size: var(--ac-fs-xs);
+    color: var(--ac-muted);
     white-space: normal;
 }
 .st-key-uploader [data-testid="stFileUploaderDropzone"] button {
     border-radius: 999px !important;
-    font-size: var(--nb-fs-sm);
+    font-size: var(--ac-fs-sm);
     padding: 0.25rem 0.75rem;
 }
-.st-key-uploader [data-testid="stFileUploaderFile"] { font-size: var(--nb-fs-sm); }
+.st-key-uploader [data-testid="stFileUploaderFile"] { font-size: var(--ac-fs-sm); }
 
 /* Indikator kuota "3 dari 5 file terpakai" */
-.nb-quota { padding: 0.55rem 0.6rem 0.15rem; }
-.nb-quota-head {
+.ac-quota { padding: 0.55rem 0.6rem 0.15rem; }
+.ac-quota-head {
     display: flex;
     align-items: baseline;
     justify-content: space-between;
     gap: 0.5rem;
-    font-size: var(--nb-fs-xs);
-    color: var(--nb-muted);
+    font-size: var(--ac-fs-xs);
+    color: var(--ac-muted);
     margin-bottom: 0.4rem;
 }
-.nb-quota-head strong { color: var(--nb-text); font-weight: 600; }
-.nb-quota-cap { font-size: var(--nb-fs-2xs); opacity: 0.8; }
-.nb-quota-bar {
+.ac-quota-head strong { color: var(--ac-text); font-weight: 600; }
+.ac-quota-cap { font-size: var(--ac-fs-2xs); opacity: 0.8; }
+.ac-quota-bar {
     height: 4px;
     border-radius: 99px;
-    background: var(--nb-elevated);
+    background: var(--ac-elevated);
     overflow: hidden;
 }
-.nb-quota-bar > span {
+.ac-quota-bar > span {
     display: block;
     height: 100%;
     border-radius: 99px;
-    background: linear-gradient(90deg, var(--nb-accent), var(--nb-accent-soft));
+    background: linear-gradient(90deg, var(--ac-accent), var(--ac-accent-soft));
     transition: width 0.25s ease;
 }
-.nb-quota.is-full .nb-quota-bar > span { background: var(--nb-danger); }
+.ac-quota.is-full .ac-quota-bar > span { background: var(--ac-danger); }
 
 /* Baris dokumen */
-.nb-doc {
+.ac-doc {
     display: flex;
     align-items: center;
     gap: 0.55rem;
     padding: 0.38rem 0 0.38rem 0.45rem;
     min-width: 0;
 }
-.nb-doc-icon {
+.ac-doc-icon {
     display: grid;
     place-items: center;
     flex-shrink: 0;
     width: 1.7rem;
     height: 1.7rem;
     border-radius: 9px;
-    background: var(--nb-accent-dim);
-    border: 1px solid var(--nb-accent-line);
-    color: var(--nb-accent);
+    background: var(--ac-accent-dim);
+    border: 1px solid var(--ac-accent-line);
+    color: var(--ac-accent);
 }
-.nb-doc-icon svg { width: 15px; height: 15px; display: block; }
-.nb-doc-body { display: flex; flex-direction: column; min-width: 0; gap: 0.1rem; }
-.nb-doc-name {
-    font-size: var(--nb-fs-base);
+.ac-doc-icon svg { width: 15px; height: 15px; display: block; }
+.ac-doc-body { display: flex; flex-direction: column; min-width: 0; gap: 0.1rem; }
+.ac-doc-name {
+    font-size: var(--ac-fs-base);
     font-weight: 500;
-    color: var(--nb-text);
+    color: var(--ac-text);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
-.nb-doc-meta {
-    font-size: var(--nb-fs-2xs);
-    color: var(--nb-muted);
+.ac-doc-meta {
+    font-size: var(--ac-fs-2xs);
+    color: var(--ac-muted);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
-.nb-note {
+.ac-note {
     padding: 0.6rem 0.6rem 0;
-    font-size: var(--nb-fs-2xs);
+    font-size: var(--ac-fs-2xs);
     line-height: 1.65;
-    color: var(--nb-muted);
+    color: var(--ac-muted);
     opacity: 0.85;
 }
 
 /* Alert hasil unggah dibuat ringkas supaya muat di sidebar */
 [data-testid="stSidebar"] [data-testid="stAlertContainer"] {
     padding: 0.55rem 0.7rem;
-    font-size: var(--nb-fs-sm);
+    font-size: var(--ac-fs-sm);
     line-height: 1.55;
     border-radius: 12px;
 }
 
 /* Chip file bawaan uploader disesuaikan dengan tema */
 .st-key-uploader [data-testid="stFileChip"] {
-    background: var(--nb-elevated) !important;
-    border: 1px solid var(--nb-border) !important;
+    background: var(--ac-elevated) !important;
+    border: 1px solid var(--ac-border) !important;
     border-radius: 10px;
-    font-size: var(--nb-fs-sm);
+    font-size: var(--ac-fs-sm);
 }
-.st-key-uploader [data-testid="stFileChip"] svg { color: var(--nb-accent); }
+.st-key-uploader [data-testid="stFileChip"] svg { color: var(--ac-accent); }
 
 /* st.status: tiap tahap pemrosesan tampil sebagai langkah bertanda */
 [data-testid="stSidebar"] [data-testid="stExpander"] details {
     border-radius: 12px;
-    border-color: var(--nb-border);
-    background: var(--nb-surface);
+    border-color: var(--ac-border);
+    background: var(--ac-surface);
 }
 [data-testid="stSidebar"] [data-testid="stExpander"] summary {
-    font-size: var(--nb-fs-sm);
+    font-size: var(--ac-fs-sm);
     font-weight: 600;
 }
 [data-testid="stSidebar"] [data-testid="stExpander"] [data-testid="stMarkdown"] p {
     position: relative;
-    font-size: var(--nb-fs-xs);
+    font-size: var(--ac-fs-xs);
     line-height: 1.55;
-    color: var(--nb-muted);
+    color: var(--ac-muted);
     margin: 0 0 0.3rem;
     padding-left: 0.85rem;
 }
@@ -748,47 +748,47 @@ footer,
     width: 4px;
     height: 4px;
     border-radius: 99px;
-    background: var(--nb-accent);
+    background: var(--ac-accent);
 }
 
 /* --- Tombol "Coba lagi" saat jawaban gagal --- */
 .st-key-retry_wrap { margin: 0.35rem 0 0 3rem; }
 .st-key-retry_wrap button {
     border-radius: 999px !important;
-    font-size: var(--nb-fs-base);
+    font-size: var(--ac-fs-base);
     padding: 0.3rem 0.9rem;
-    color: var(--nb-muted);
+    color: var(--ac-muted);
 }
 .st-key-retry_wrap button:hover {
-    color: var(--nb-text);
-    border-color: var(--nb-accent-edge);
+    color: var(--ac-text);
+    border-color: var(--ac-accent-edge);
 }
 
 /* --- Header percakapan aktif --- */
-.nb-thread-head {
+.ac-thread-head {
     display: flex;
     align-items: baseline;
     gap: 0.6rem;
     margin-bottom: 1.6rem;
     padding-bottom: 0.85rem;
-    border-bottom: 1px solid var(--nb-border);
+    border-bottom: 1px solid var(--ac-border);
 }
-.nb-thread-title {
-    font-size: var(--nb-fs-lg);
+.ac-thread-title {
+    font-size: var(--ac-fs-lg);
     font-weight: 700;
     letter-spacing: -0.02em;
 }
-.nb-thread-meta { font-size: var(--nb-fs-sm); color: var(--nb-muted); }
+.ac-thread-meta { font-size: var(--ac-fs-sm); color: var(--ac-muted); }
 
 /* Scrollbar tipis biar konsisten dengan tema */
 ::-webkit-scrollbar { width: 9px; height: 9px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
-    background: var(--nb-scroll);
+    background: var(--ac-scroll);
     border-radius: 99px;
-    border: 2px solid var(--nb-bg);
+    border: 2px solid var(--ac-bg);
 }
-::-webkit-scrollbar-thumb:hover { background: var(--nb-scroll-hover); }
+::-webkit-scrollbar-thumb:hover { background: var(--ac-scroll-hover); }
 </style>
 """
 
@@ -824,11 +824,11 @@ def render_sidebar(conversations: list[dict]) -> None:
     with st.sidebar:
         st.markdown(
             f"""
-            <div class="nb-brand">
-                <div class="nb-brand-mark">N</div>
+            <div class="ac-brand">
+                <div class="ac-brand-mark">aC</div>
                 <div>
-                    <div class="nb-brand-name">{APP_NAME}</div>
-                    <div class="nb-brand-sub">{APP_TAGLINE}</div>
+                    <div class="ac-brand-name">{APP_NAME}</div>
+                    <div class="ac-brand-sub">{APP_TAGLINE}</div>
                 </div>
             </div>
             """,
@@ -851,14 +851,14 @@ def render_sidebar(conversations: list[dict]) -> None:
 
         st.divider()
         st.markdown(
-            f'<div class="nb-section">Riwayat'
-            f'<span class="nb-count">{len(conversations)}</span></div>',
+            f'<div class="ac-section">Riwayat'
+            f'<span class="ac-count">{len(conversations)}</span></div>',
             unsafe_allow_html=True,
         )
 
         if not conversations:
             st.markdown(
-                '<div class="nb-hint">Belum ada percakapan tersimpan. '
+                '<div class="ac-hint">Belum ada percakapan tersimpan. '
                 "Kirim pesan pertamamu untuk memulai.</div>",
                 unsafe_allow_html=True,
             )
@@ -921,12 +921,12 @@ def render_quota(used: int) -> None:
     state = " is-full" if used >= total else ""
     st.markdown(
         f"""
-        <div class="nb-quota{state}">
-            <div class="nb-quota-head">
+        <div class="ac-quota{state}">
+            <div class="ac-quota-head">
                 <span><strong>{used}</strong> dari {total} file terpakai</span>
-                <span class="nb-quota-cap">maks {ingest.MAX_FILE_SIZE_MB} MB/file</span>
+                <span class="ac-quota-cap">maks {ingest.MAX_FILE_SIZE_MB} MB/file</span>
             </div>
-            <div class="nb-quota-bar"><span style="width:{percent}%"></span></div>
+            <div class="ac-quota-bar"><span style="width:{percent}%"></span></div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -943,7 +943,7 @@ def render_document_row(document: dict) -> None:
         label, confirm, cancel = st.columns(
             [0.6, 0.2, 0.2], gap="small", vertical_alignment="center"
         )
-        label.markdown('<div class="nb-hint">Hapus dokumen ini?</div>', unsafe_allow_html=True)
+        label.markdown('<div class="ac-hint">Hapus dokumen ini?</div>', unsafe_allow_html=True)
         with confirm.container(key=f"confirmdoc_{document_id}"):
             if st.button(
                 "", icon=":material/check:", key=f"confirmdoc_btn_{document_id}",
@@ -976,11 +976,11 @@ def render_document_row(document: dict) -> None:
     with info_col:
         st.markdown(
             f"""
-            <div class="nb-doc">
-                <span class="nb-doc-icon">{icon}</span>
-                <span class="nb-doc-body">
-                    <span class="nb-doc-name">{escape(shorten(document["filename"]))}</span>
-                    <span class="nb-doc-meta">{escape(detail)} · {uploaded_at}</span>
+            <div class="ac-doc">
+                <span class="ac-doc-icon">{icon}</span>
+                <span class="ac-doc-body">
+                    <span class="ac-doc-name">{escape(shorten(document["filename"]))}</span>
+                    <span class="ac-doc-meta">{escape(detail)} · {uploaded_at}</span>
                 </span>
             </div>
             """,
@@ -1006,21 +1006,21 @@ def render_about() -> None:
     with st.expander("Tentang aplikasi ini", expanded=False):
         st.markdown(
             f"""
-            <div class="nb-about">
-              <p class="nb-about-lead">
+            <div class="ac-about">
+              <p class="ac-about-lead">
                 {APP_NAME} menjawab pertanyaan berdasarkan dokumen yang kamu unggah.
                 Isi dokumen dicari lebih dulu, baru dikirim ke model bahasa sebagai
                 kutipan, jadi jawabannya bisa ditelusuri ke sumbernya.
               </p>
 
-              <div class="nb-about-flow">
+              <div class="ac-about-flow">
                 <span>Unggah</span><i></i>
                 <span>Ekstraksi teks</span><i></i>
                 <span>Chunking</span><i></i>
                 <span>Embedding</span><i></i>
                 <span>Qdrant</span>
               </div>
-              <div class="nb-about-flow">
+              <div class="ac-about-flow">
                 <span>Pertanyaan</span><i></i>
                 <span>Embedding</span><i></i>
                 <span>Cari {TOP_K} chunk</span><i></i>
@@ -1029,7 +1029,7 @@ def render_about() -> None:
                 <span>Jawaban + Sumber</span>
               </div>
 
-              <table class="nb-about-table">
+              <table class="ac-about-table">
                 <tr><td>Antarmuka</td><td>Streamlit</td></tr>
                 <tr><td>Model chat</td><td><code>{settings.model}</code></td></tr>
                 <tr><td>Model vision</td><td><code>{settings.vision_model}</code></td></tr>
@@ -1040,7 +1040,7 @@ def render_about() -> None:
                 <tr><td>Top-K</td><td>{TOP_K} kutipan per pertanyaan</td></tr>
               </table>
 
-              <p class="nb-about-foot">
+              <p class="ac-about-foot">
                 Dokumen PDF, DOCX, XLSX, dan PPTX diurai jadi teks. Gambar dibaca
                 model vision lebih dulu, lalu deskripsinya diperlakukan seperti teks
                 dokumen biasa. File aslinya tidak pernah disimpan permanen, hanya
@@ -1066,7 +1066,7 @@ def render_rag_controls() -> None:
 
     if not settings.rag_available:
         st.markdown(
-            '<div class="nb-note">RAG mati: <code>GEMINI_API_KEY</code> belum diset, '
+            '<div class="ac-note">RAG mati: <code>GEMINI_API_KEY</code> belum diset, '
             "jadi dokumen tidak bisa di-embedding.</div>",
             unsafe_allow_html=True,
         )
@@ -1088,7 +1088,7 @@ def render_rag_controls() -> None:
     if indexed_chunks:
         state = "aktif" if st.session_state.rag_on else "nonaktif"
         st.markdown(
-            f'<div class="nb-note">{indexed_chunks} chunk terindeks di Qdrant · '
+            f'<div class="ac-note">{indexed_chunks} chunk terindeks di Qdrant · '
             f"pencarian <strong>{state}</strong>.</div>",
             unsafe_allow_html=True,
         )
@@ -1100,8 +1100,8 @@ def render_documents_section() -> None:
     used = len(documents)
 
     st.markdown(
-        f'<div class="nb-section">Dokumen'
-        f'<span class="nb-count">{used}/{ingest.MAX_DOCUMENTS}</span></div>',
+        f'<div class="ac-section">Dokumen'
+        f'<span class="ac-count">{used}/{ingest.MAX_DOCUMENTS}</span></div>',
         unsafe_allow_html=True,
     )
 
@@ -1118,7 +1118,7 @@ def render_documents_section() -> None:
             process_uploads(files)
     else:
         st.markdown(
-            '<div class="nb-hint">Penyimpanan penuh. Hapus salah satu dokumen '
+            '<div class="ac-hint">Penyimpanan penuh. Hapus salah satu dokumen '
             "dulu untuk bisa mengunggah lagi.</div>",
             unsafe_allow_html=True,
         )
@@ -1131,7 +1131,7 @@ def render_documents_section() -> None:
 
     if documents:
         st.markdown(
-            '<div class="nb-note">File asli tidak disimpan — hanya teks hasil '
+            '<div class="ac-note">File asli tidak disimpan — hanya teks hasil '
             "ekstraksi dan vector-nya.</div>",
             unsafe_allow_html=True,
         )
@@ -1146,7 +1146,7 @@ def render_conversation_row(conv: dict) -> None:
 
     if st.session_state.get("pending_delete") == conv_id:
         label, confirm, cancel = st.columns([0.6, 0.2, 0.2], gap="small", vertical_alignment="center")
-        label.markdown('<div class="nb-hint">Hapus chat ini?</div>', unsafe_allow_html=True)
+        label.markdown('<div class="ac-hint">Hapus chat ini?</div>', unsafe_allow_html=True)
         with confirm.container(key=f"confirm_{conv_id}"):
             if st.button(
                 "", icon=":material/check:", key=f"confirm_btn_{conv_id}",
@@ -1197,13 +1197,13 @@ def render_empty_state() -> None:
 def _render_empty_state_body() -> None:
     st.markdown(
         f"""
-        <div class="nb-empty">
-            <div class="nb-empty-mark">✦</div>
+        <div class="ac-empty">
+            <div class="ac-empty-mark">✦</div>
             <h1>Halo, ada yang bisa dibantu?</h1>
             <p>Tanyakan apa saja ke {APP_NAME}. Setiap percakapan tersimpan otomatis
             dan bisa dibuka kembali kapan pun lewat sidebar.</p>
         </div>
-        <div class="nb-empty-label">Coba mulai dari sini</div>
+        <div class="ac-empty-label">Coba mulai dari sini</div>
         """,
         unsafe_allow_html=True,
     )
@@ -1222,9 +1222,9 @@ def render_thread_header(conversation: dict, message_count: int) -> None:
     title = escape(conversation["title"])
     st.markdown(
         f"""
-        <div class="nb-thread-head">
-            <span class="nb-thread-title">{title}</span>
-            <span class="nb-thread-meta">{message_count} pesan</span>
+        <div class="ac-thread-head">
+            <span class="ac-thread-title">{title}</span>
+            <span class="ac-thread-meta">{message_count} pesan</span>
         </div>
         """,
         unsafe_allow_html=True,
@@ -1242,15 +1242,15 @@ def render_sources(sources: list[dict]) -> None:
             score = float(source["score"])
             st.markdown(
                 f"""
-                <div class="nb-src">
-                    <div class="nb-src-head">
-                        <span class="nb-src-rank">{number}</span>
-                        <span class="nb-src-file">{escape(str(source["filename"]))}</span>
-                        <span class="nb-src-part">bagian {int(source["chunk_index"]) + 1}</span>
-                        <span class="nb-src-score">{score:.3f}</span>
+                <div class="ac-src">
+                    <div class="ac-src-head">
+                        <span class="ac-src-rank">{number}</span>
+                        <span class="ac-src-file">{escape(str(source["filename"]))}</span>
+                        <span class="ac-src-part">bagian {int(source["chunk_index"]) + 1}</span>
+                        <span class="ac-src-score">{score:.3f}</span>
                     </div>
-                    <div class="nb-src-bar"><span style="width:{max(0.0, min(score, 1.0)) * 100:.1f}%"></span></div>
-                    <div class="nb-src-text">{escape(str(source["text"]))}</div>
+                    <div class="ac-src-bar"><span style="width:{max(0.0, min(score, 1.0)) * 100:.1f}%"></span></div>
+                    <div class="ac-src-text">{escape(str(source["text"]))}</div>
                 </div>
                 """,
                 unsafe_allow_html=True,

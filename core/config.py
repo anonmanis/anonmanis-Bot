@@ -20,7 +20,7 @@ try:  # pragma: no cover - hanya jalur kenyamanan lokal
 except Exception:  # pragma: no cover - dotenv tidak terpasang, abaikan saja
     pass
 
-APP_NAME = "Nimbus"
+APP_NAME = "anonmanis-Chat"
 APP_TAGLINE = "Asisten AI pribadi"
 
 DEFAULT_BASE_URL = "https://api.groq.com/openai/v1"

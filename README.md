@@ -1,4 +1,4 @@
-# Nimbus
+# anonmanis-Chat
 
 Chatbot AI dengan Retrieval Augmented Generation (RAG). Unggah dokumen atau
 gambar, lalu tanyakan isinya. Jawaban disusun dari kutipan dokumen yang
