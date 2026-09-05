@@ -426,9 +426,9 @@ kode. File `.env` sudah masuk `.gitignore`.
 | `GROQ_VISION_MODEL` | Tidak | `qwen/qwen3.6-27b` | Model multimodal untuk membaca gambar |
 | `GEMINI_EMBED_MODEL` | Tidak | `gemini-embedding-001` | Model embedding |
 | `GEMINI_EMBED_DIM` | Tidak | `768` | Dimensi vektor yang diminta, rentang 128 sampai 3072 |
-| `QDRANT_PATH` | Tidak | `data/qdrant` | Folder penyimpanan Qdrant local mode |
+| `QDRANT_PATH` | Tidak | `data/qdrant` | Folder penyimpanan Qdrant local mode. Path relatif dihitung dari root project dan foldernya dibuat otomatis |
 | `QDRANT_COLLECTION` | Tidak | `documents` | Nama collection Qdrant |
-| `APP_DB_PATH` | Tidak | `data/chat.db` | Lokasi file database SQLite |
+| `APP_DB_PATH` | Tidak | `data/chat.db` | Lokasi **file** database SQLite, bukan folder. Folder induknya dibuat otomatis |
 
 ---
 

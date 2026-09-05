@@ -19,7 +19,13 @@ __pycache__/
 .ruff_cache/
 
 # ---- Data & database ----
+# Folder default, plus nama-nama lain yang lazim dipakai lewat
+# QDRANT_PATH dan APP_DB_PATH. Isi vector store dan riwayat chat
+# tidak boleh ikut ter-commit.
 data/
+qdrant_db/
+qdrant/
+db_sql/
 *.db
 *.db-journal
 *.sqlite
