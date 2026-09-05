@@ -478,6 +478,34 @@ footer,
     word-break: break-word;
 }
 
+/* --- Status pemrosesan lampiran di area chat --- */
+.st-key-chat-upload [data-testid="stExpander"] {
+    margin: 0 0 var(--ac-gap-md) 3rem;
+    width: calc(100% - 3rem) !important;
+}
+.st-key-chat-upload [data-testid="stExpander"] details {
+    background: var(--ac-surface);
+    border-color: var(--ac-border);
+}
+.st-key-chat-upload [data-testid="stMarkdown"] p {
+    position: relative;
+    font-size: var(--ac-fs-xs);
+    line-height: 1.55;
+    color: var(--ac-muted);
+    margin: 0 0 0.3rem;
+    padding-left: 0.85rem;
+}
+.st-key-chat-upload [data-testid="stMarkdown"] p::before {
+    content: "";
+    position: absolute;
+    left: 0.15rem;
+    top: 0.55em;
+    width: 4px;
+    height: 4px;
+    border-radius: 99px;
+    background: var(--ac-accent);
+}
+
 /* --- Panel "Tentang" --- */
 .st-key-about [data-testid="stExpander"] { margin: 0; width: auto !important; }
 .st-key-about [data-testid="stExpander"] details {
@@ -633,34 +661,21 @@ footer,
 }
 .st-key-uploader [data-testid="stFileUploaderFile"] { font-size: var(--ac-fs-sm); }
 
-/* Indikator kuota "3 dari 5 file terpakai" */
-.ac-quota { padding: 0.55rem 0.6rem 0.15rem; }
+/* Baris info: jumlah dokumen tersimpan dan batas per sekali unggah */
+.ac-quota { padding: 0.55rem 0.6rem 0.2rem; }
 .ac-quota-head {
     display: flex;
     align-items: baseline;
     justify-content: space-between;
-    gap: 0.5rem;
+    flex-wrap: wrap;
+    gap: 0.3rem 0.5rem;
     font-size: var(--ac-fs-xs);
     color: var(--ac-muted);
     margin-bottom: 0.4rem;
 }
 .ac-quota-head strong { color: var(--ac-text); font-weight: 600; }
+.ac-quota-head { margin-bottom: 0; }
 .ac-quota-cap { font-size: var(--ac-fs-2xs); opacity: 0.8; }
-.ac-quota-bar {
-    height: 4px;
-    border-radius: 99px;
-    background: var(--ac-elevated);
-    overflow: hidden;
-}
-.ac-quota-bar > span {
-    display: block;
-    height: 100%;
-    border-radius: 99px;
-    background: linear-gradient(90deg, var(--ac-accent), var(--ac-accent-soft));
-    transition: width 0.25s ease;
-}
-.ac-quota.is-full .ac-quota-bar > span { background: var(--ac-danger); }
-
 /* Baris dokumen */
 .ac-doc {
     display: flex;
@@ -884,10 +899,17 @@ def shorten(name: str, limit: int = 26) -> str:
     return f"{head}…{dot}{extension}" if dot else f"{name[: limit - 1]}…"
 
 
-def process_uploads(files: list) -> None:
-    """Jalankan pipeline ingest untuk tiap file sambil menampilkan tahapannya."""
+def process_uploads(files: list) -> list:
+    """Jalankan pipeline ingest untuk tiap file sambil menampilkan tahapannya.
+
+    Mengembalikan daftar ``IngestResult``. Pemanggil yang memutuskan kapan
+    harus ``st.rerun()``, karena unggahan dari sidebar dan dari kotak chat
+    punya kelanjutan yang berbeda.
+    """
+    accepted, overflow = ingest.split_batch(files)
     results = []
-    for uploaded in files:
+
+    for uploaded in accepted:
         label = shorten(uploaded.name, 22)
         with st.status(f"Memproses {label}", expanded=True) as status:
             result = ingest.ingest(uploaded.name, uploaded.getvalue(), progress=st.write)
@@ -898,10 +920,8 @@ def process_uploads(files: list) -> None:
             )
         results.append(result)
 
-    st.session_state.upload_results = results
-    # Ganti key uploader supaya widget-nya kosong lagi dan file tidak diproses dua kali.
-    st.session_state.upload_round = st.session_state.get("upload_round", 0) + 1
-    st.rerun()
+    results.extend(ingest.overflow_result(item.name) for item in overflow)
+    return results
 
 
 def render_upload_results() -> None:
@@ -914,19 +934,17 @@ def render_upload_results() -> None:
             st.error(f"**{name}** ditolak. {result.message}", icon=":material/block:")
 
 
-def render_quota(used: int) -> None:
-    """Indikator '3 dari 5 file terpakai' beserta bar-nya."""
-    total = ingest.MAX_DOCUMENTS
-    percent = round(used / total * 100)
-    state = " is-full" if used >= total else ""
+def render_limits(used: int) -> None:
+    """Jumlah dokumen tersimpan beserta batas yang berlaku per sekali unggah."""
+    label = f"<strong>{used}</strong> dokumen tersimpan" if used else "Belum ada dokumen"
     st.markdown(
         f"""
-        <div class="ac-quota{state}">
+        <div class="ac-quota">
             <div class="ac-quota-head">
-                <span><strong>{used}</strong> dari {total} file terpakai</span>
-                <span class="ac-quota-cap">maks {ingest.MAX_FILE_SIZE_MB} MB/file</span>
+                <span>{label}</span>
+                <span class="ac-quota-cap">maks {ingest.MAX_FILES_PER_BATCH} file/unggah
+                    &middot; {ingest.MAX_FILE_SIZE_MB} MB/file</span>
             </div>
-            <div class="ac-quota-bar"><span style="width:{percent}%"></span></div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -1041,10 +1059,14 @@ def render_about() -> None:
               </table>
 
               <p class="ac-about-foot">
-                Dokumen PDF, DOCX, XLSX, dan PPTX diurai jadi teks. Gambar dibaca
-                model vision lebih dulu, lalu deskripsinya diperlakukan seperti teks
-                dokumen biasa. File aslinya tidak pernah disimpan permanen, hanya
-                hasil pemrosesannya.
+                File bisa diunggah lewat sidebar atau dilampirkan langsung di kotak
+                chat, keduanya melewati pipeline yang sama. Dokumen PDF, DOCX, XLSX,
+                dan PPTX diurai jadi teks. Gambar dibaca model vision lebih dulu,
+                lalu deskripsinya diperlakukan seperti teks dokumen biasa. Maksimal
+                {ingest.MAX_FILES_PER_BATCH} file sekali unggah dan
+                {ingest.MAX_FILE_SIZE_MB} MB per file, dan itu batas per unggah,
+                bukan kuota permanen. File aslinya tidak pernah disimpan permanen,
+                hanya hasil pemrosesannya.
               </p>
             </div>
             """,
@@ -1100,31 +1122,26 @@ def render_documents_section() -> None:
     used = len(documents)
 
     st.markdown(
-        f'<div class="ac-section">Dokumen'
-        f'<span class="ac-count">{used}/{ingest.MAX_DOCUMENTS}</span></div>',
+        f'<div class="ac-section">Dokumen<span class="ac-count">{used}</span></div>',
         unsafe_allow_html=True,
     )
 
-    if used < ingest.MAX_DOCUMENTS:
-        with st.container(key="uploader"):
-            files = st.file_uploader(
-                "Unggah dokumen",
-                type=list(ingest.ALLOWED_TYPES),
-                accept_multiple_files=True,
-                key=f"uploader_{st.session_state.get('upload_round', 0)}",
-                label_visibility="collapsed",
-            )
-        if files:
-            process_uploads(files)
-    else:
-        st.markdown(
-            '<div class="ac-hint">Penyimpanan penuh. Hapus salah satu dokumen '
-            "dulu untuk bisa mengunggah lagi.</div>",
-            unsafe_allow_html=True,
+    with st.container(key="uploader"):
+        files = st.file_uploader(
+            "Unggah dokumen",
+            type=list(ingest.ALLOWED_TYPES),
+            accept_multiple_files=True,
+            key=f"uploader_{st.session_state.get('upload_round', 0)}",
+            label_visibility="collapsed",
         )
+    if files:
+        st.session_state.upload_results = process_uploads(files)
+        # Ganti key uploader supaya widget kosong lagi dan file tidak diproses dua kali.
+        st.session_state.upload_round = st.session_state.get("upload_round", 0) + 1
+        st.rerun()
 
     render_upload_results()
-    render_quota(used)
+    render_limits(used)
 
     for document in documents:
         render_document_row(document)
@@ -1274,6 +1291,27 @@ def render_message(role: str, content: str, key: str | int = "live") -> None:
             render_sources(db.list_message_sources(key))
 
 
+def read_submission(submission) -> tuple[str | None, list]:
+    """Pisahkan teks dan lampiran dari hasil ``st.chat_input``.
+
+    Widget mengembalikan string biasa kalau tidak menerima file, atau objek
+    ``ChatInputValue`` dengan atribut ``text`` dan ``files`` kalau menerima.
+    """
+    if submission is None:
+        return None, []
+    if isinstance(submission, str):
+        return submission.strip() or None, []
+    text = (getattr(submission, "text", "") or "").strip()
+    files = list(getattr(submission, "files", None) or [])
+    return text or None, files
+
+
+def attachment_note(results: list) -> str:
+    """Catatan lampiran yang ikut disimpan di isi pesan pengguna."""
+    names = [result.filename for result in results if result.ok]
+    return f"\n\n_Lampiran: {', '.join(names)}_" if names else ""
+
+
 def retrieve_sources(question: str) -> tuple[list[dict], str | None]:
     """Cari chunk pendukung di Qdrant. Kembalikan (sumber, pesan error)."""
     if not rag_enabled():
@@ -1342,8 +1380,25 @@ def generate_reply(conversation_id: int, question: str | None = None) -> None:
         st.session_state.last_error = retrieval_error
 
 
-def handle_prompt(prompt: str) -> None:
-    """Simpan pesan pengguna, stream jawaban, lalu simpan hasilnya."""
+def handle_prompt(prompt: str | None, attachments: list | None = None) -> None:
+    """Proses lampiran (kalau ada), simpan pesan pengguna, lalu stream jawaban.
+
+    Lampiran diproses lebih dulu supaya chunk-nya sudah ada di Qdrant saat
+    pertanyaan pada pesan yang sama dicari jawabannya.
+    """
+    attachments = list(attachments or [])
+    results: list = []
+
+    if attachments:
+        with st.container(key="chat-upload"):
+            results = process_uploads(attachments)
+        st.session_state.upload_results = results
+
+    if not prompt:
+        # Hanya melampirkan file tanpa bertanya: cukup diproses lalu segarkan.
+        st.rerun()
+        return
+
     conv_id = active_conversation_id()
     is_new_conversation = conv_id is None
 
@@ -1351,8 +1406,9 @@ def handle_prompt(prompt: str) -> None:
         conv_id = db.create_conversation()
         st.session_state.conversation_id = conv_id
 
-    db.add_message(conv_id, "user", prompt)
-    render_message("user", prompt)
+    content = prompt + attachment_note(results)
+    db.add_message(conv_id, "user", content)
+    render_message("user", content)
     generate_reply(conv_id, question=prompt)
 
     if is_new_conversation:
@@ -1392,10 +1448,13 @@ def main() -> None:
 
     render_sidebar(db.list_conversations())
 
-    prompt = st.chat_input(
+    submission = st.chat_input(
         f"Kirim pesan ke {APP_NAME}…",
+        accept_file="multiple",
+        file_type=list(ingest.ALLOWED_TYPES),
         disabled=not settings.is_configured,
     )
+    prompt, attachments = read_submission(submission)
     prompt = prompt or st.session_state.pop("queued_prompt", None)
 
     if not settings.is_configured:
@@ -1413,11 +1472,11 @@ def main() -> None:
             render_thread_header(conversation, len(messages))
         for message in messages:
             render_message(message["role"], message["content"], key=message["id"])
-    elif not prompt:
+    elif not prompt and not attachments:
         render_empty_state()
 
-    if prompt:
-        handle_prompt(prompt)
+    if prompt or attachments:
+        handle_prompt(prompt, attachments)
         return
 
     if st.session_state.pop("retry_pending", False) and conv_id:

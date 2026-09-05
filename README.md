@@ -38,15 +38,18 @@ Dibangun dengan Streamlit, Groq, Google Gemini Embedding, Qdrant, dan SQLite.
 **Dokumen dan gambar**
 
 - Menerima PDF, DOCX, XLSX, PPTX, PNG, JPG, dan JPEG
-- Batas 5 MB per file dan 5 file tersimpan, pelanggaran ditolak dengan pesan
-  yang jelas, bukan exception mentah
+- File bisa diunggah lewat sidebar atau dilampirkan langsung di kotak chat,
+  keduanya melewati pipeline yang sama dan sama-sama masuk ke indeks RAG
+- Batas 5 MB per file dan 5 file per sekali unggah. Batas ini berlaku per
+  batch, bukan kuota permanen, jadi pengguna boleh mengunggah berkali-kali
+- Pelanggaran ditolak dengan pesan yang jelas, bukan exception mentah
 - Gambar dibaca model vision Groq lebih dulu, deskripsi dan teks di dalamnya
   lalu diperlakukan seperti teks dokumen biasa sehingga ikut tercari lewat RAG
 - File asli tidak pernah disimpan permanen, hanya hasil pemrosesannya
 - Tahapan proses tampil langsung lewat `st.status`, dari penyimpanan sementara
   sampai penghapusan file
 - Daftar dokumen menampilkan ikon per tipe, ukuran, jumlah chunk, dan jam unggah
-- Indikator kuota "3 dari 5 file terpakai"
+- Indikator jumlah dokumen tersimpan beserta batas yang berlaku
 - Menghapus dokumen ikut menghapus chunk-nya dari Qdrant
 
 **RAG**
@@ -96,11 +99,11 @@ Dibangun dengan Streamlit, Groq, Google Gemini Embedding, Qdrant, dan SQLite.
 
 ```mermaid
 flowchart TD
-    UP["Pengguna unggah file<br/>PDF, DOCX, XLSX, PPTX, PNG, JPG, JPEG"]
+    UP["Unggah file<br/>sidebar atau lampiran di kotak chat<br/>maks 5 file sekali unggah"]
 
     subgraph ING["Pipeline ingest, core/ingest.py"]
         direction TB
-        T1["1. Simpan ke folder temp"] --> T2["2. Validasi tipe dan ukuran<br/>maks 5 MB, maks 5 file"]
+        T1["1. Simpan ke folder temp"] --> T2["2. Validasi tipe dan ukuran<br/>maks 5 MB per file"]
         T2 --> T3{"3. Tipe file?"}
         T3 -->|"dokumen"| DOC["Parsing teks<br/>pypdf, python-docx,<br/>openpyxl, python-pptx"]
         T3 -->|"gambar"| VIS["Baca gambar<br/>Groq qwen/qwen3.6-27b<br/>deskripsi + teks di dalamnya"]
@@ -148,9 +151,17 @@ yang relevan di Qdrant.
 Isi file ditulis ke berkas sementara di folder temp sistem.
 
 **Langkah 2, validasi.**
-Ekstensi harus termasuk PDF, DOCX, XLSX, PPTX, PNG, JPG, atau JPEG. Ukuran
-maksimal 5 MB per file, dan jumlah dokumen tersimpan maksimal 5. Pelanggaran
+Ekstensi harus termasuk PDF, DOCX, XLSX, PPTX, PNG, JPG, atau JPEG, dengan
+ukuran maksimal 5 MB per file. Satu kali unggah menerima paling banyak 5 file;
+kelebihannya tidak diproses dan pengguna diberi tahu agar mengunggahnya lagi
+setelah batch berjalan selesai. Batas ini berlaku per batch, bukan kuota
+permanen, sehingga jumlah dokumen tersimpan tidak dibatasi. Pelanggaran
 dikembalikan sebagai pesan yang bisa dibaca pengguna, bukan exception.
+
+File bisa masuk lewat dua pintu, uploader di sidebar atau lampiran di kotak
+chat, dan keduanya memakai pipeline yang sama persis. Lampiran di kotak chat
+diproses lebih dulu sebelum pertanyaan pada pesan yang sama dijawab, sehingga
+chunk-nya sudah bisa dicari saat itu juga.
 
 **Langkah 3, ekstraksi teks.**
 Dokumen diurai sesuai tipenya. Gambar dikirim ke model vision Groq
@@ -210,6 +221,8 @@ halaman di-refresh.
 
 | Parameter | Nilai |
 | --- | --- |
+| Maksimal file per sekali unggah | 5 |
+| Maksimal ukuran per file | 5 MB |
 | Ukuran chunk | 800 karakter |
 | Overlap antar chunk | 150 karakter |
 | Batas pemecahan kalimat panjang | 650 karakter |
@@ -462,8 +475,10 @@ anonmanis-Bot/
 
 **Kapasitas dan skala**
 
-- Maksimal 5 dokumen tersimpan dan 5 MB per file. Angka ini ditetapkan di
-  `core/ingest.py` dan sengaja dibuat kecil agar pemakaian API tetap terkendali.
+- Maksimal 5 file per sekali unggah dan 5 MB per file, ditetapkan di
+  `core/ingest.py`. Jumlah dokumen tersimpan tidak dibatasi, jadi indeks Qdrant
+  bisa tumbuh terus dan daftar dokumen di sidebar ikut memanjang. Belum ada
+  paginasi maupun pencarian di daftar itu.
 - Qdrant local mode mengunci folder penyimpanan untuk satu proses. Aplikasi
   ini hanya bisa dijalankan satu instance pada satu waktu untuk folder data
   yang sama. Untuk akses bersamaan, Qdrant perlu dijalankan sebagai server.

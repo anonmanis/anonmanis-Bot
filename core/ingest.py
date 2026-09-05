@@ -30,7 +30,11 @@ from core.config import get_settings
 # --------------------------------------------------------------------------- #
 MAX_FILE_SIZE_MB = 5
 MAX_FILE_SIZE = MAX_FILE_SIZE_MB * 1024 * 1024
-MAX_DOCUMENTS = 5
+
+# Batas per sekali unggah, bukan kuota permanen. Setelah satu batch selesai
+# diproses, pengguna boleh mengunggah batch berikutnya tanpa perlu menghapus
+# dokumen lama.
+MAX_FILES_PER_BATCH = 5
 
 IMAGE_TYPES = ("png", "jpg", "jpeg")
 DOCUMENT_TYPES = ("pdf", "docx", "xlsx", "pptx")
@@ -105,8 +109,23 @@ def allowed_types_sentence() -> str:
     return ", ".join(TYPE_LABELS[t] for t in ALLOWED_TYPES)
 
 
-def remaining_slots() -> int:
-    return max(0, MAX_DOCUMENTS - db.count_documents())
+def split_batch(files: list) -> tuple[list, list]:
+    """Bagi pilihan file menjadi yang diproses sekarang dan yang kelebihan."""
+    items = list(files)
+    return items[:MAX_FILES_PER_BATCH], items[MAX_FILES_PER_BATCH:]
+
+
+def overflow_result(filename: str) -> "IngestResult":
+    """Hasil untuk file yang melebihi jatah satu kali unggah."""
+    return IngestResult(
+        filename=filename,
+        ok=False,
+        message=(
+            f"Maksimal {MAX_FILES_PER_BATCH} file sekali unggah. "
+            "File ini bisa diunggah lagi setelah batch sekarang selesai."
+        ),
+        status=STATUS_FAILED,
+    )
 
 
 def _short_reason(exc: Exception) -> str:
@@ -134,7 +153,7 @@ def _clean_text(raw: str) -> str:
 # Tahap 2 — validasi
 # --------------------------------------------------------------------------- #
 def validate(filename: str, size_on_disk: int) -> str:
-    """Pastikan tipe, ukuran, dan kuota penyimpanan terpenuhi.
+    """Pastikan tipe dan ukuran file memenuhi syarat.
 
     Mengembalikan ekstensi file kalau lolos, atau melempar ``RejectedFile``
     dengan pesan yang siap ditampilkan ke pengguna.
@@ -153,12 +172,6 @@ def validate(filename: str, size_on_disk: int) -> str:
     if size_on_disk > MAX_FILE_SIZE:
         raise RejectedFile(
             f"Ukurannya {human_size(size_on_disk)}, melebihi batas {MAX_FILE_SIZE_MB} MB per file."
-        )
-
-    if db.count_documents() >= MAX_DOCUMENTS:
-        raise RejectedFile(
-            f"Penyimpanan penuh ({MAX_DOCUMENTS} dari {MAX_DOCUMENTS} file). "
-            "Hapus satu dokumen dulu."
         )
 
     return extension
