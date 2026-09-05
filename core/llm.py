@@ -6,13 +6,18 @@ transport-nya. API key diambil dari environment melalui ``core.config``.
 
 from __future__ import annotations
 
+import random
 import re
+import time
 from functools import lru_cache
-from typing import Any, Iterator, Sequence
+from typing import Any, Callable, Iterator, Sequence, TypeVar
 
 from openai import OpenAI
 
-from core.config import get_settings
+from core import errors
+from core.config import MAX_RETRIES, REQUEST_TIMEOUT, RETRY_BACKOFF, get_settings
+
+T = TypeVar("T")
 
 SYSTEM_PROMPT = (
     "Kamu adalah Nimbus, asisten AI yang ramah, ringkas, dan akurat. "
@@ -66,9 +71,33 @@ def get_client() -> OpenAI:
     return OpenAI(
         api_key=settings.groq_api_key,
         base_url=settings.base_url,
-        timeout=60.0,
-        max_retries=2,
+        timeout=REQUEST_TIMEOUT,
+        # Percobaan ulang ditangani sendiri lewat with_retry supaya jeda
+        # tunggunya bisa mengikuti header Retry-After dari Groq.
+        max_retries=0,
     )
+
+
+def with_retry(call: Callable[[], T], attempts: int = MAX_RETRIES) -> T:
+    """Jalankan ``call`` dengan percobaan ulang untuk kegagalan sementara.
+
+    Yang diulang hanya rate limit, error 5xx, timeout, dan gangguan koneksi.
+    Kesalahan permanen seperti API key salah langsung dilempar supaya
+    pengguna tidak menunggu percuma.
+    """
+    last: BaseException | None = None
+    for attempt in range(attempts):
+        try:
+            return call()
+        except Exception as exc:  # noqa: BLE001 - diputuskan oleh is_retryable
+            last = exc
+            if attempt == attempts - 1 or not errors.is_retryable(exc):
+                raise
+            delay = errors.retry_after_seconds(exc)
+            if delay is None:
+                delay = (RETRY_BACKOFF ** attempt) + random.uniform(0, 0.3)
+            time.sleep(min(delay, 20.0))
+    raise last  # type: ignore[misc]
 
 
 def _payload(messages: Sequence[dict[str, Any]]) -> list[dict[str, str]]:
@@ -100,15 +129,18 @@ def stream_chat(
     dipakai langsung oleh ``st.write_stream`` di UI.
     """
     settings = get_settings()
-    stream = get_client().chat.completions.create(
-        model=settings.model,
-        messages=[
-            {"role": "system", "content": build_system_prompt(context)},
-            *_payload(messages),
-        ],
-        temperature=temperature,
-        max_tokens=max_tokens,
-        stream=True,
+    payload = [
+        {"role": "system", "content": build_system_prompt(context)},
+        *_payload(messages),
+    ]
+    stream = with_retry(
+        lambda: get_client().chat.completions.create(
+            model=settings.model,
+            messages=payload,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            stream=True,
+        )
     )
     for chunk in stream:
         if not getattr(chunk, "choices", None):
@@ -133,17 +165,21 @@ def generate_title(first_user_message: str) -> str:
     """Minta Groq meringkas pesan pertama menjadi judul maksimal 6 kata."""
     settings = get_settings()
     try:
-        response = get_client().chat.completions.create(
-            model=settings.title_model,
-            messages=[
-                {"role": "system", "content": TITLE_PROMPT},
-                {"role": "user", "content": first_user_message[:2000]},
-            ],
-            temperature=0.2,
-            max_tokens=32,
+        response = with_retry(
+            lambda: get_client().chat.completions.create(
+                model=settings.title_model,
+                messages=[
+                    {"role": "system", "content": TITLE_PROMPT},
+                    {"role": "user", "content": first_user_message[:2000]},
+                ],
+                temperature=0.2,
+                max_tokens=32,
+            ),
+            attempts=2,
         )
         raw = (response.choices[0].message.content or "").strip()
     except Exception:
+        # Judul bukan hal kritis: kalau gagal, pakai potongan pesan pengguna.
         return fallback_title(first_user_message)
 
     # Bersihkan tanda kutip, penomoran, dan tanda baca di ujung judul.

@@ -22,7 +22,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from core import db, rag
+from core import db, errors, rag, vision
+from core.config import get_settings
 
 # --------------------------------------------------------------------------- #
 # Batasan
@@ -49,7 +50,7 @@ TYPE_LABELS = {
 STATUS_INDEXED = "indexed"             # teks diekstrak dan chunk-nya masuk Qdrant
 STATUS_PROCESSED = "processed"          # teks diekstrak, tapi belum terindeks
 STATUS_NO_TEXT = "no_text"             # terbaca, tapi tidak ada teks di dalamnya
-STATUS_PENDING_EXTRACTION = "pending"  # gambar, ekstraksi isi menyusul di tahap 4
+STATUS_PENDING_EXTRACTION = "pending"  # gambar yang gagal dibaca model vision
 STATUS_FAILED = "failed"               # file tidak bisa dibaca
 
 
@@ -109,9 +110,9 @@ def remaining_slots() -> int:
 
 
 def _short_reason(exc: Exception) -> str:
-    """Ringkas pesan error panjang dari SDK agar muat di sidebar."""
-    reason = str(exc).strip().splitlines()[0] if str(exc).strip() else exc.__class__.__name__
-    return reason if len(reason) <= 90 else reason[:87] + "…"
+    """Pesan error yang sudah ramah dan cukup pendek untuk sidebar."""
+    reason = errors.friendly_message(exc)
+    return reason if len(reason) <= 110 else reason[:107] + "…"
 
 
 def delete_document(document_id: int) -> None:
@@ -258,15 +259,14 @@ PARSERS: dict[str, Callable[[Path], str]] = {
 
 
 def parse(path: Path, extension: str) -> str:
-    """Ekstrak teks dari file di ``path``.
-
-    Gambar dikembalikan sebagai string kosong: pada tahap ini hanya
-    metadatanya yang disimpan, ekstraksi isinya menyusul di tahap 4.
-    """
-    if extension in IMAGE_TYPES:
-        return ""
+    """Ekstrak teks dari file dokumen di ``path``."""
     parser = PARSERS[extension]
     return _clean_text(parser(path))
+
+
+def describe(image_bytes: bytes, filename: str) -> str:
+    """Baca isi gambar lewat model vision, hasilnya jadi teks dokumen."""
+    return _clean_text(vision.describe_image(image_bytes, filename))
 
 
 # --------------------------------------------------------------------------- #
@@ -302,11 +302,19 @@ def ingest(
         size_on_disk = temp_path.stat().st_size
         extension = validate(filename, size_on_disk)
 
-        # Tahap 3 — parsing jadi teks
+        # Tahap 3 — parsing jadi teks. Untuk gambar, "teks"-nya adalah
+        # deskripsi dari model vision Groq, termasuk tulisan yang terbaca
+        # di dalam gambar. Setelah ini alurnya sama persis dengan dokumen.
+        vision_note = ""
         if extension in IMAGE_TYPES:
-            step("Gambar dicatat sebagai metadata (ekstraksi isi menyusul)…")
-            text = ""
-            status = STATUS_PENDING_EXTRACTION
+            step(f"Membaca gambar dengan {get_settings().vision_model}…")
+            try:
+                text = describe(data, filename)
+                status = STATUS_PROCESSED if text else STATUS_NO_TEXT
+            except vision.VisionError as exc:
+                text = ""
+                status = STATUS_PENDING_EXTRACTION
+                vision_note = str(exc)
         else:
             step("Mengekstrak teks…")
             text = parse(temp_path, extension)
@@ -344,12 +352,13 @@ def ingest(
                 index_note = f" Belum terindeks untuk RAG: {_short_reason(exc)}"
 
         if status == STATUS_PENDING_EXTRACTION:
-            message = "tersimpan sebagai metadata, isinya menyusul di tahap 4."
+            message = f"tersimpan sebagai metadata saja. {vision_note}".strip()
         elif status == STATUS_NO_TEXT:
             message = "tersimpan, tapi tidak ada teks di dalamnya."
         elif status == STATUS_INDEXED:
+            source = "deskripsi gambar" if extension in IMAGE_TYPES else "teks"
             message = (
-                f"terindeks, {thousands(len(text))} karakter "
+                f"terindeks, {thousands(len(text))} karakter {source} "
                 f"jadi {chunk_count} chunk."
             )
         else:

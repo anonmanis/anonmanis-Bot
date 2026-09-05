@@ -26,6 +26,13 @@ APP_TAGLINE = "Asisten AI pribadi"
 DEFAULT_BASE_URL = "https://api.groq.com/openai/v1"
 DEFAULT_MODEL = "llama-3.3-70b-versatile"
 DEFAULT_TITLE_MODEL = "llama-3.3-70b-versatile"
+# Model multimodal Groq yang membaca gambar (teks + blok image_url).
+DEFAULT_VISION_MODEL = "qwen/qwen3.6-27b"
+
+# Batas waktu dan percobaan ulang untuk semua panggilan API keluar.
+REQUEST_TIMEOUT = 60.0
+MAX_RETRIES = 3
+RETRY_BACKOFF = 1.5
 DEFAULT_DB_PATH = "data/chat.db"
 
 # --- RAG ---------------------------------------------------------------- #
@@ -65,6 +72,7 @@ class Settings:
     base_url: str
     model: str
     title_model: str
+    vision_model: str
     db_path: Path
     gemini_api_key: str
     embed_model: str
@@ -96,6 +104,7 @@ def get_settings() -> Settings:
         base_url=_env("GROQ_BASE_URL", DEFAULT_BASE_URL),
         model=_env("GROQ_MODEL", DEFAULT_MODEL),
         title_model=_env("GROQ_TITLE_MODEL", _env("GROQ_MODEL", DEFAULT_TITLE_MODEL)),
+        vision_model=_env("GROQ_VISION_MODEL", DEFAULT_VISION_MODEL),
         db_path=_resolve(_env("APP_DB_PATH", DEFAULT_DB_PATH)),
         # GOOGLE_API_KEY diterima juga karena itu nama yang dipakai SDK google-genai.
         gemini_api_key=_env("GEMINI_API_KEY", _env("GOOGLE_API_KEY")),

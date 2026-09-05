@@ -21,7 +21,9 @@ import math
 from functools import lru_cache
 from typing import Iterable, Sequence
 
-from core.config import get_settings
+from core import errors
+from core.config import REQUEST_TIMEOUT, get_settings
+from core.llm import with_retry
 
 TASK_DOCUMENT = "RETRIEVAL_DOCUMENT"
 TASK_QUERY = "RETRIEVAL_QUERY"
@@ -47,7 +49,13 @@ def get_client():
     except ImportError as exc:  # pragma: no cover
         raise EmbeddingError("Paket google-genai belum terpasang.") from exc
 
-    return genai.Client(api_key=settings.gemini_api_key)
+    from google.genai import types
+
+    return genai.Client(
+        api_key=settings.gemini_api_key,
+        # HttpOptions.timeout dihitung dalam milidetik.
+        http_options=types.HttpOptions(timeout=int(REQUEST_TIMEOUT * 1000)),
+    )
 
 
 def _config(task_type: str, with_task: bool = True):
@@ -79,16 +87,19 @@ def _call(contents: list[str], task_type: str) -> list[list[float]]:
     client = get_client()
     model = get_settings().embed_model
     try:
-        response = client.models.embed_content(
-            model=model, contents=contents, config=_config(task_type)
+        response = with_retry(
+            lambda: client.models.embed_content(
+                model=model, contents=contents, config=_config(task_type)
+            )
         )
     except Exception as exc:
-        message = str(exc)
         # Model yang tidak mengenal task_type (mis. seri multimodal) dicoba lagi tanpa itu.
-        if "task_type" not in message.lower():
+        if "task_type" not in str(exc).lower():
             raise
-        response = client.models.embed_content(
-            model=model, contents=contents, config=_config(task_type, with_task=False)
+        response = with_retry(
+            lambda: client.models.embed_content(
+                model=model, contents=contents, config=_config(task_type, with_task=False)
+            )
         )
     return [list(embedding.values or []) for embedding in (response.embeddings or [])]
 
@@ -106,20 +117,30 @@ def embed_texts(texts: Sequence[str], task_type: str = TASK_DOCUMENT) -> list[li
 
     vectors: list[list[float]] = []
     for batch in _batched(texts, BATCH_SIZE):
+        fatal: Exception | None = None
         try:
             batch_vectors = _call(batch, task_type)
-        except Exception:
+        except Exception as exc:  # noqa: BLE001 - dicoba ulang per teks di bawah
             batch_vectors = []
+            fatal = exc
 
         # Batch dianggap sah hanya kalau jumlah vector-nya sama dengan
         # jumlah teks. Kalau tidak, ulangi satu per satu.
         if len(batch_vectors) != len(batch) or not all(batch_vectors):
+            if fatal is not None and not errors.is_retryable(fatal):
+                # Rate limit atau gangguan sementara sudah habis jatah ulangnya,
+                # atau errornya permanen: tidak ada gunanya mengulang per teks.
+                raise EmbeddingError(
+                    errors.friendly_message(fatal, "Embedding gagal dibuat.")
+                ) from fatal
             batch_vectors = []
             for text in batch:
                 try:
                     single = _call([text], task_type)
                 except Exception as exc:
-                    raise EmbeddingError(f"Gagal membuat embedding: {exc}") from exc
+                    raise EmbeddingError(
+                        errors.friendly_message(exc, "Embedding gagal dibuat.")
+                    ) from exc
                 if not single or not single[0]:
                     raise EmbeddingError("API embedding tidak mengembalikan vector.")
                 batch_vectors.append(single[0])

@@ -11,8 +11,15 @@ from typing import Iterable, Iterator
 
 import streamlit as st
 
-from core import db, ingest, llm, rag, vectorstore
-from core.config import APP_NAME, APP_TAGLINE, get_settings
+from core import db, errors, ingest, llm, rag, vectorstore
+from core.config import (
+    APP_NAME,
+    APP_TAGLINE,
+    CHUNK_OVERLAP,
+    CHUNK_SIZE,
+    TOP_K,
+    get_settings,
+)
 
 USER_AVATAR = ":material/person:"
 BOT_AVATAR = ":material/auto_awesome:"
@@ -68,8 +75,33 @@ CUSTOM_CSS = """
     --nb-text:      #E9EBF2;
     --nb-muted:     #8A92A6;
     --nb-accent:    #7C5CFF;
-    --nb-accent-dim: rgba(124, 92, 255, 0.14);
+    --nb-accent-deep: #4B31D6;
+    --nb-accent-soft: #9B85FF;
+    --nb-on-accent: #FFFFFF;
+    --nb-danger:    #FF8B8B;
+
+    /* Tiga tingkat transparansi aksen dipakai konsisten:
+       dim untuk isian, line untuk garis tepi, edge untuk tepi aktif. */
+    --nb-accent-dim:  rgba(124, 92, 255, 0.14);
+    --nb-accent-line: rgba(124, 92, 255, 0.30);
+    --nb-accent-edge: rgba(124, 92, 255, 0.55);
+
+    /* Skala tipografi */
+    --nb-fs-2xs:  0.68rem;
+    --nb-fs-xs:   0.72rem;
+    --nb-fs-sm:   0.78rem;
+    --nb-fs-base: 0.83rem;
+    --nb-fs-md:   0.95rem;
+    --nb-fs-lg:   1.05rem;
+
+    /* Skala jarak */
+    --nb-gap-xs: 0.35rem;
+    --nb-gap-sm: 0.55rem;
+    --nb-gap-md: 0.85rem;
+    --nb-gap-lg: 1.4rem;
+
     --nb-radius:    18px;
+    --nb-radius-sm: 11px;
     --nb-chat-width: 46rem;
 }
 
@@ -121,7 +153,7 @@ footer,
     border-radius: var(--nb-radius);
     padding: 0.95rem 1.2rem;
     line-height: 1.75;
-    font-size: 0.965rem;
+    font-size: var(--nb-fs-md);
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.28);
     overflow-x: auto;
 }
@@ -131,7 +163,7 @@ footer,
 /* Pesan pengguna diberi warna aksen yang lembut */
 [class*="st-key-msg-user-"] [data-testid="stChatMessageContent"] {
     background: var(--nb-accent-dim);
-    border-color: rgba(124, 92, 255, 0.34);
+    border-color: var(--nb-accent-line);
 }
 [class*="st-key-msg-"] { gap: 0 !important; }
 
@@ -139,15 +171,15 @@ footer,
 [data-testid="stChatMessageAvatarCustom"] {
     width: 2.15rem !important;
     height: 2.15rem !important;
-    border-radius: 11px !important;
+    border-radius: var(--nb-radius-sm) !important;
     border: 1px solid var(--nb-border);
     flex-shrink: 0;
 }
 [class*="st-key-msg-assistant-"] [data-testid="stChatMessageAvatarCustom"] {
-    background: linear-gradient(140deg, var(--nb-accent), #4B31D6);
-    border-color: rgba(124, 92, 255, 0.55);
-    color: #FFFFFF;
-    box-shadow: 0 0 0 3px rgba(124, 92, 255, 0.12);
+    background: linear-gradient(140deg, var(--nb-accent), var(--nb-accent-deep));
+    border-color: var(--nb-accent-edge);
+    color: var(--nb-on-accent);
+    box-shadow: 0 0 0 3px var(--nb-accent-dim);
 }
 [class*="st-key-msg-user-"] [data-testid="stChatMessageAvatarCustom"] {
     background: var(--nb-elevated);
@@ -165,8 +197,8 @@ footer,
     box-shadow: 0 8px 28px rgba(0, 0, 0, 0.4);
 }
 [data-testid="stChatInput"]:focus-within {
-    border-color: rgba(124, 92, 255, 0.6);
-    box-shadow: 0 0 0 3px rgba(124, 92, 255, 0.16), 0 8px 28px rgba(0, 0, 0, 0.4);
+    border-color: var(--nb-accent-edge);
+    box-shadow: 0 0 0 3px var(--nb-accent-dim), 0 8px 28px rgba(0, 0, 0, 0.4);
 }
 [data-testid="stChatInput"] textarea::placeholder { color: var(--nb-muted); }
 
@@ -198,26 +230,26 @@ footer,
     width: 2.35rem;
     height: 2.35rem;
     border-radius: 13px;
-    background: linear-gradient(140deg, var(--nb-accent), #4B31D6);
-    color: #FFFFFF;
+    background: linear-gradient(140deg, var(--nb-accent), var(--nb-accent-deep));
+    color: var(--nb-on-accent);
     font-size: 1.1rem;
     font-weight: 700;
-    box-shadow: 0 4px 16px rgba(124, 92, 255, 0.35);
+    box-shadow: 0 4px 16px var(--nb-accent-line);
 }
 .nb-brand-name {
-    font-size: 1.06rem;
+    font-size: var(--nb-fs-lg);
     font-weight: 700;
     letter-spacing: -0.02em;
     line-height: 1.2;
 }
-.nb-brand-sub { font-size: 0.75rem; color: var(--nb-muted); }
+.nb-brand-sub { font-size: var(--nb-fs-sm); color: var(--nb-muted); }
 
 .nb-section {
     display: flex;
     align-items: center;
     justify-content: space-between;
     padding: 0.25rem 0.5rem 0.4rem;
-    font-size: 0.68rem;
+    font-size: var(--nb-fs-2xs);
     font-weight: 700;
     letter-spacing: 0.11em;
     text-transform: uppercase;
@@ -231,19 +263,19 @@ footer,
 }
 .nb-hint {
     padding: 0.7rem 0.6rem;
-    font-size: 0.8rem;
+    font-size: var(--nb-fs-sm);
     line-height: 1.6;
     color: var(--nb-muted);
 }
 .nb-foot {
     padding: 0.55rem 0.6rem 0;
-    font-size: 0.72rem;
+    font-size: var(--nb-fs-xs);
     color: var(--nb-muted);
     line-height: 1.7;
 }
 .nb-foot code {
     font-family: 'JetBrains Mono', ui-monospace, monospace;
-    font-size: 0.7rem;
+    font-size: var(--nb-fs-xs);
     color: var(--nb-accent);
     background: var(--nb-accent-dim);
     padding: 0.1rem 0.35rem;
@@ -255,7 +287,7 @@ footer,
     justify-content: flex-start !important;
     font-weight: 500;
     padding: 0.45rem 0.7rem;
-    border-radius: 11px !important;
+    border-radius: var(--nb-radius-sm) !important;
 }
 [data-testid="stSidebar"] [data-testid="stButton"] button [data-testid="stMarkdownContainer"] {
     width: 100%;
@@ -277,7 +309,7 @@ footer,
     border-radius: 999px !important;
     font-weight: 600;
     padding: 0.55rem 0.9rem;
-    box-shadow: 0 4px 14px rgba(124, 92, 255, 0.28);
+    box-shadow: 0 4px 14px var(--nb-accent-line);
 }
 [data-testid="stSidebar"] [class*="st-key-del_"] button,
 [data-testid="stSidebar"] [class*="st-key-confirm_"] button,
@@ -288,8 +320,8 @@ footer,
 }
 [data-testid="stSidebar"] [class*="st-key-del_"] button:hover,
 [data-testid="stSidebar"] [class*="st-key-confirm_"] button:hover {
-    color: #FF6B6B;
-    background: rgba(255, 107, 107, 0.12);
+    color: var(--nb-danger);
+    background: rgba(255, 139, 139, 0.12);
 }
 
 /* --- Empty state --- */
@@ -307,11 +339,11 @@ footer,
     height: 3.6rem;
     margin-bottom: 1.4rem;
     border-radius: 20px;
-    background: linear-gradient(140deg, var(--nb-accent), #4B31D6);
-    color: #FFFFFF;
+    background: linear-gradient(140deg, var(--nb-accent), var(--nb-accent-deep));
+    color: var(--nb-on-accent);
     font-size: 1.65rem;
     font-weight: 700;
-    box-shadow: 0 10px 34px rgba(124, 92, 255, 0.38);
+    box-shadow: 0 10px 34px var(--nb-accent-line);
 }
 .nb-empty h1 {
     margin: 0 0 0.6rem;
@@ -323,12 +355,12 @@ footer,
     max-width: 30rem;
     margin: 0 auto;
     color: var(--nb-muted);
-    font-size: 0.95rem;
+    font-size: var(--nb-fs-md);
     line-height: 1.75;
 }
 .nb-empty-label {
     margin: 1.6rem 0 0.9rem;
-    font-size: 0.68rem;
+    font-size: var(--nb-fs-2xs);
     font-weight: 700;
     letter-spacing: 0.11em;
     text-transform: uppercase;
@@ -342,13 +374,13 @@ footer,
     background: var(--nb-surface);
     border: 1px solid var(--nb-border);
     color: var(--nb-text);
-    font-size: 0.83rem;
+    font-size: var(--nb-fs-base);
     font-weight: 500;
     line-height: 1.4;
     transition: border-color 0.15s ease, transform 0.15s ease;
 }
 .st-key-suggestions .stButton > button:hover {
-    border-color: rgba(124, 92, 255, 0.55);
+    border-color: var(--nb-accent-edge);
     background: var(--nb-elevated);
     color: var(--nb-text);
     transform: translateY(-1px);
@@ -357,7 +389,7 @@ footer,
 
 /* --- Toggle RAG di sidebar --- */
 .st-key-rag_toggle { padding: 0.5rem 0.6rem 0.1rem; }
-.st-key-rag_toggle label p { font-size: 0.8rem !important; font-weight: 500; }
+.st-key-rag_toggle label p { font-size: var(--nb-fs-sm) !important; font-weight: 500; }
 
 /* --- Expander "Sumber" di bawah jawaban --- */
 [data-testid="stMainBlockContainer"] [data-testid="stExpander"] {
@@ -371,7 +403,7 @@ footer,
     border-radius: 13px;
 }
 [data-testid="stMainBlockContainer"] [data-testid="stExpander"] summary {
-    font-size: 0.78rem;
+    font-size: var(--nb-fs-sm);
     font-weight: 600;
     color: var(--nb-muted);
 }
@@ -395,25 +427,25 @@ footer,
     height: 1.25rem;
     border-radius: 6px;
     background: var(--nb-accent-dim);
-    border: 1px solid rgba(124, 92, 255, 0.3);
+    border: 1px solid var(--nb-accent-line);
     color: var(--nb-accent);
-    font-size: 0.67rem;
+    font-size: var(--nb-fs-2xs);
     font-weight: 700;
 }
 .nb-src-file {
-    font-size: 0.79rem;
+    font-size: var(--nb-fs-sm);
     font-weight: 600;
     color: var(--nb-text);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
-.nb-src-part { font-size: 0.7rem; color: var(--nb-muted); }
+.nb-src-part { font-size: var(--nb-fs-xs); color: var(--nb-muted); }
 .nb-src-score {
     margin-left: auto;
     flex-shrink: 0;
     font-family: 'JetBrains Mono', ui-monospace, monospace;
-    font-size: 0.71rem;
+    font-size: var(--nb-fs-xs);
     color: var(--nb-accent);
     background: var(--nb-accent-dim);
     padding: 0.1rem 0.4rem;
@@ -430,7 +462,7 @@ footer,
     display: block;
     height: 100%;
     border-radius: 99px;
-    background: linear-gradient(90deg, var(--nb-accent), #9B85FF);
+    background: linear-gradient(90deg, var(--nb-accent), var(--nb-accent-soft));
 }
 .nb-src-text {
     max-height: 7rem;
@@ -439,11 +471,133 @@ footer,
     border-radius: 10px;
     background: var(--nb-surface);
     border: 1px solid var(--nb-border);
-    font-size: 0.76rem;
+    font-size: var(--nb-fs-sm);
     line-height: 1.65;
     color: var(--nb-muted);
     white-space: pre-wrap;
     word-break: break-word;
+}
+
+/* --- Panel "Tentang" --- */
+.st-key-about [data-testid="stExpander"] { margin: 0; width: auto !important; }
+.st-key-about [data-testid="stExpander"] details {
+    background: var(--nb-surface);
+    border: 1px solid var(--nb-border);
+    border-radius: 12px;
+}
+.st-key-about [data-testid="stExpander"] summary {
+    font-size: var(--nb-fs-sm);
+    font-weight: 600;
+    color: var(--nb-muted);
+}
+.nb-about p { margin: 0 0 var(--nb-gap-md); }
+.nb-about-lead {
+    font-size: var(--nb-fs-sm);
+    line-height: 1.7;
+    color: var(--nb-text);
+}
+.nb-about-flow {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.3rem;
+    margin-bottom: var(--nb-gap-sm);
+}
+.nb-about-flow span {
+    padding: 0.16rem 0.5rem;
+    border-radius: 7px;
+    background: var(--nb-accent-dim);
+    border: 1px solid var(--nb-accent-line);
+    color: var(--nb-text);
+    font-size: var(--nb-fs-2xs);
+    font-weight: 500;
+    white-space: nowrap;
+}
+.nb-about-flow i {
+    width: 0.55rem;
+    height: 1px;
+    background: var(--nb-border);
+    flex-shrink: 0;
+}
+.nb-about-table {
+    width: 100%;
+    margin: var(--nb-gap-md) 0;
+    border-collapse: collapse;
+    font-size: var(--nb-fs-xs);
+}
+.nb-about-table td {
+    padding: 0.28rem 0;
+    border-bottom: 1px solid var(--nb-border);
+    vertical-align: top;
+}
+.nb-about-table tr:last-child td { border-bottom: none; }
+.nb-about-table td:first-child { color: var(--nb-muted); width: 42%; }
+.nb-about-table code {
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: var(--nb-fs-2xs);
+    color: var(--nb-accent);
+    background: var(--nb-accent-dim);
+    padding: 0.05rem 0.3rem;
+    border-radius: 5px;
+    word-break: break-all;
+}
+.nb-about-foot {
+    font-size: var(--nb-fs-xs) !important;
+    line-height: 1.7;
+    color: var(--nb-muted);
+    margin-bottom: 0 !important;
+}
+
+/* --- Layar tablet: sidebar dipersempit, area chat ikut menyesuaikan --- */
+@media (max-width: 1180px) {
+    :root { --nb-chat-width: 40rem; }
+    [data-testid="stSidebar"],
+    [data-testid="stSidebar"] > div { width: 18.5rem !important; }
+}
+
+@media (max-width: 900px) {
+    :root {
+        --nb-chat-width: 100%;
+        --nb-radius: 15px;
+    }
+    [data-testid="stSidebar"],
+    [data-testid="stSidebar"] > div { width: 17.5rem !important; }
+    .stMainBlockContainer,
+    [data-testid="stMainBlockContainer"] {
+        padding-left: 1.1rem !important;
+        padding-right: 1.1rem !important;
+        padding-top: 2.4rem !important;
+    }
+    [data-testid="stBottomBlockContainer"] {
+        padding-left: 1.1rem !important;
+        padding-right: 1.1rem !important;
+    }
+    /* Chip saran menumpuk dua baris, bukan tiga kolom sempit */
+    .st-key-suggestions [data-testid="stHorizontalBlock"] { flex-wrap: wrap; }
+    .st-key-suggestions [data-testid="stColumn"] {
+        flex: 1 1 46% !important;
+        min-width: 46% !important;
+    }
+    .nb-empty { padding-top: 1rem; }
+    .nb-empty h1 { font-size: 1.55rem; }
+    .nb-empty p { font-size: var(--nb-fs-md); }
+    .st-key-empty_wrap { min-height: 52vh; }
+    /* Expander sumber ikut melebar penuh di layar sempit */
+    [data-testid="stMainBlockContainer"] [data-testid="stExpander"] {
+        margin-left: 0;
+        width: 100% !important;
+    }
+    .st-key-retry_wrap { margin-left: 0; }
+}
+
+@media (max-width: 640px) {
+    [data-testid="stChatMessage"] { gap: 0.6rem; }
+    [data-testid="stChatMessage"] [data-testid="stChatMessageContent"] {
+        padding: 0.8rem 0.95rem;
+        font-size: var(--nb-fs-md);
+    }
+    .nb-src-head { flex-wrap: wrap; }
+    .nb-src-score { margin-left: 0; }
 }
 
 /* --- Bagian dokumen di sidebar --- */
@@ -456,7 +610,7 @@ footer,
     transition: border-color 0.15s ease, background 0.15s ease;
 }
 .st-key-uploader [data-testid="stFileUploaderDropzone"]:hover {
-    border-color: rgba(124, 92, 255, 0.55);
+    border-color: var(--nb-accent-edge);
     background: var(--nb-elevated);
 }
 /* Streamlit menulis plafon server (25MB) di dropzone. Batas sebenarnya 5 MB
@@ -468,16 +622,16 @@ footer,
 }
 .st-key-uploader [data-testid="stFileUploaderDropzoneInstructions"] span::after {
     content: "PDF · DOCX · XLSX · PPTX · PNG · JPG";
-    font-size: 0.72rem;
+    font-size: var(--nb-fs-xs);
     color: var(--nb-muted);
     white-space: normal;
 }
 .st-key-uploader [data-testid="stFileUploaderDropzone"] button {
     border-radius: 999px !important;
-    font-size: 0.78rem;
+    font-size: var(--nb-fs-sm);
     padding: 0.25rem 0.75rem;
 }
-.st-key-uploader [data-testid="stFileUploaderFile"] { font-size: 0.75rem; }
+.st-key-uploader [data-testid="stFileUploaderFile"] { font-size: var(--nb-fs-sm); }
 
 /* Indikator kuota "3 dari 5 file terpakai" */
 .nb-quota { padding: 0.55rem 0.6rem 0.15rem; }
@@ -486,12 +640,12 @@ footer,
     align-items: baseline;
     justify-content: space-between;
     gap: 0.5rem;
-    font-size: 0.74rem;
+    font-size: var(--nb-fs-xs);
     color: var(--nb-muted);
     margin-bottom: 0.4rem;
 }
 .nb-quota-head strong { color: var(--nb-text); font-weight: 600; }
-.nb-quota-cap { font-size: 0.68rem; opacity: 0.8; }
+.nb-quota-cap { font-size: var(--nb-fs-2xs); opacity: 0.8; }
 .nb-quota-bar {
     height: 4px;
     border-radius: 99px;
@@ -502,10 +656,10 @@ footer,
     display: block;
     height: 100%;
     border-radius: 99px;
-    background: linear-gradient(90deg, var(--nb-accent), #9B85FF);
+    background: linear-gradient(90deg, var(--nb-accent), var(--nb-accent-soft));
     transition: width 0.25s ease;
 }
-.nb-quota.is-full .nb-quota-bar > span { background: #FF8B8B; }
+.nb-quota.is-full .nb-quota-bar > span { background: var(--nb-danger); }
 
 /* Baris dokumen */
 .nb-doc {
@@ -523,13 +677,13 @@ footer,
     height: 1.7rem;
     border-radius: 9px;
     background: var(--nb-accent-dim);
-    border: 1px solid rgba(124, 92, 255, 0.28);
+    border: 1px solid var(--nb-accent-line);
     color: var(--nb-accent);
 }
 .nb-doc-icon svg { width: 15px; height: 15px; display: block; }
 .nb-doc-body { display: flex; flex-direction: column; min-width: 0; gap: 0.1rem; }
 .nb-doc-name {
-    font-size: 0.82rem;
+    font-size: var(--nb-fs-base);
     font-weight: 500;
     color: var(--nb-text);
     overflow: hidden;
@@ -537,7 +691,7 @@ footer,
     white-space: nowrap;
 }
 .nb-doc-meta {
-    font-size: 0.66rem;
+    font-size: var(--nb-fs-2xs);
     color: var(--nb-muted);
     overflow: hidden;
     text-overflow: ellipsis;
@@ -545,7 +699,7 @@ footer,
 }
 .nb-note {
     padding: 0.6rem 0.6rem 0;
-    font-size: 0.68rem;
+    font-size: var(--nb-fs-2xs);
     line-height: 1.65;
     color: var(--nb-muted);
     opacity: 0.85;
@@ -554,7 +708,7 @@ footer,
 /* Alert hasil unggah dibuat ringkas supaya muat di sidebar */
 [data-testid="stSidebar"] [data-testid="stAlertContainer"] {
     padding: 0.55rem 0.7rem;
-    font-size: 0.76rem;
+    font-size: var(--nb-fs-sm);
     line-height: 1.55;
     border-radius: 12px;
 }
@@ -564,7 +718,7 @@ footer,
     background: var(--nb-elevated) !important;
     border: 1px solid var(--nb-border) !important;
     border-radius: 10px;
-    font-size: 0.75rem;
+    font-size: var(--nb-fs-sm);
 }
 .st-key-uploader [data-testid="stFileChip"] svg { color: var(--nb-accent); }
 
@@ -575,12 +729,12 @@ footer,
     background: var(--nb-surface);
 }
 [data-testid="stSidebar"] [data-testid="stExpander"] summary {
-    font-size: 0.79rem;
+    font-size: var(--nb-fs-sm);
     font-weight: 600;
 }
 [data-testid="stSidebar"] [data-testid="stExpander"] [data-testid="stMarkdown"] p {
     position: relative;
-    font-size: 0.73rem;
+    font-size: var(--nb-fs-xs);
     line-height: 1.55;
     color: var(--nb-muted);
     margin: 0 0 0.3rem;
@@ -601,13 +755,13 @@ footer,
 .st-key-retry_wrap { margin: 0.35rem 0 0 3rem; }
 .st-key-retry_wrap button {
     border-radius: 999px !important;
-    font-size: 0.83rem;
+    font-size: var(--nb-fs-base);
     padding: 0.3rem 0.9rem;
     color: var(--nb-muted);
 }
 .st-key-retry_wrap button:hover {
     color: var(--nb-text);
-    border-color: rgba(124, 92, 255, 0.55);
+    border-color: var(--nb-accent-edge);
 }
 
 /* --- Header percakapan aktif --- */
@@ -620,21 +774,21 @@ footer,
     border-bottom: 1px solid var(--nb-border);
 }
 .nb-thread-title {
-    font-size: 1.02rem;
+    font-size: var(--nb-fs-lg);
     font-weight: 700;
     letter-spacing: -0.02em;
 }
-.nb-thread-meta { font-size: 0.75rem; color: var(--nb-muted); }
+.nb-thread-meta { font-size: var(--nb-fs-sm); color: var(--nb-muted); }
 
 /* Scrollbar tipis biar konsisten dengan tema */
 ::-webkit-scrollbar { width: 9px; height: 9px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
-    background: #262C3C;
+    background: var(--nb-scroll);
     border-radius: 99px;
     border: 2px solid var(--nb-bg);
 }
-::-webkit-scrollbar-thumb:hover { background: #333B50; }
+::-webkit-scrollbar-thumb:hover { background: var(--nb-scroll-hover); }
 </style>
 """
 
@@ -713,12 +867,8 @@ def render_sidebar(conversations: list[dict]) -> None:
                 render_conversation_row(conv)
 
         st.divider()
-        settings = get_settings()
-        st.markdown(
-            f'<div class="nb-foot">Model <code>{settings.model}</code><br>'
-            "Riwayat tersimpan lokal di SQLite.</div>",
-            unsafe_allow_html=True,
-        )
+        with st.container(key="about"):
+            render_about()
 
 
 
@@ -799,7 +949,8 @@ def render_document_row(document: dict) -> None:
                 "", icon=":material/check:", key=f"confirmdoc_btn_{document_id}",
                 width="stretch", help="Ya, hapus dokumen dan teksnya",
             ):
-                ingest.delete_document(document_id)
+                with st.spinner("Menghapus dokumen dan chunk-nya…"):
+                    ingest.delete_document(document_id)
                 st.session_state.pending_doc_delete = None
                 st.rerun()
         with cancel.container(key=f"canceldoc_{document_id}"):
@@ -847,6 +998,58 @@ def render_document_row(document: dict) -> None:
 def rag_enabled() -> bool:
     """Apakah pencarian dokumen sedang dinyalakan."""
     return bool(st.session_state.get("rag_on", True)) and get_settings().rag_available
+
+
+def render_about() -> None:
+    """Ringkasan arsitektur sistem, supaya alurnya bisa dibaca dari dalam app."""
+    settings = get_settings()
+    with st.expander("Tentang aplikasi ini", expanded=False):
+        st.markdown(
+            f"""
+            <div class="nb-about">
+              <p class="nb-about-lead">
+                {APP_NAME} menjawab pertanyaan berdasarkan dokumen yang kamu unggah.
+                Isi dokumen dicari lebih dulu, baru dikirim ke model bahasa sebagai
+                kutipan, jadi jawabannya bisa ditelusuri ke sumbernya.
+              </p>
+
+              <div class="nb-about-flow">
+                <span>Unggah</span><i></i>
+                <span>Ekstraksi teks</span><i></i>
+                <span>Chunking</span><i></i>
+                <span>Embedding</span><i></i>
+                <span>Qdrant</span>
+              </div>
+              <div class="nb-about-flow">
+                <span>Pertanyaan</span><i></i>
+                <span>Embedding</span><i></i>
+                <span>Cari {TOP_K} chunk</span><i></i>
+                <span>Kutipan + pertanyaan</span><i></i>
+                <span>Groq</span><i></i>
+                <span>Jawaban + Sumber</span>
+              </div>
+
+              <table class="nb-about-table">
+                <tr><td>Antarmuka</td><td>Streamlit</td></tr>
+                <tr><td>Model chat</td><td><code>{settings.model}</code></td></tr>
+                <tr><td>Model vision</td><td><code>{settings.vision_model}</code></td></tr>
+                <tr><td>Embedding</td><td><code>{settings.embed_model}</code></td></tr>
+                <tr><td>Vector store</td><td>Qdrant local mode, metric COSINE</td></tr>
+                <tr><td>Riwayat &amp; metadata</td><td>SQLite</td></tr>
+                <tr><td>Chunk</td><td>{CHUNK_SIZE} karakter, overlap {CHUNK_OVERLAP}</td></tr>
+                <tr><td>Top-K</td><td>{TOP_K} kutipan per pertanyaan</td></tr>
+              </table>
+
+              <p class="nb-about-foot">
+                Dokumen PDF, DOCX, XLSX, dan PPTX diurai jadi teks. Gambar dibaca
+                model vision lebih dulu, lalu deskripsinya diperlakukan seperti teks
+                dokumen biasa. File aslinya tidak pernah disimpan permanen, hanya
+                hasil pemrosesannya.
+              </p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
 
 def render_rag_controls() -> None:
@@ -1078,7 +1281,9 @@ def retrieve_sources(question: str) -> tuple[list[dict], str | None]:
     try:
         hits = rag.retrieve(question)
     except Exception as exc:  # noqa: BLE001 - pencarian gagal tidak boleh membatalkan chat
-        return [], f"Pencarian dokumen gagal, jawaban dibuat tanpa dokumen: {exc}"
+        return [], errors.friendly_message(
+            exc, "Pencarian dokumen gagal, jawaban dibuat tanpa dokumen."
+        )
     return [
         {
             "document_id": hit.document_id,
@@ -1109,7 +1314,7 @@ def generate_reply(conversation_id: int, question: str | None = None) -> None:
     sources: list[dict] = []
     retrieval_error: str | None = None
     if question:
-        with st.spinner("Mencari di dokumen…"):
+        with st.spinner(f"Mencari {TOP_K} kutipan paling relevan…"):
             sources, retrieval_error = retrieve_sources(question)
 
     context = rag.build_context(
@@ -1125,7 +1330,7 @@ def generate_reply(conversation_id: int, question: str | None = None) -> None:
         except llm.LLMConfigError as exc:
             error = str(exc)
         except Exception as exc:  # noqa: BLE001 - error apa pun tetap dilaporkan ke pengguna
-            error = f"Gagal mengambil jawaban dari Groq: {exc}"
+            error = errors.friendly_message(exc, "Jawaban gagal diambil dari Groq.")
 
     answer = "".join(buffer).strip()
     if answer:
@@ -1151,7 +1356,8 @@ def handle_prompt(prompt: str) -> None:
     generate_reply(conv_id, question=prompt)
 
     if is_new_conversation:
-        db.rename_conversation(conv_id, llm.generate_title(prompt))
+        with st.spinner("Membuat judul percakapan…"):
+            db.rename_conversation(conv_id, llm.generate_title(prompt))
 
     st.rerun()
 
