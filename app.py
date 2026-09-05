@@ -478,6 +478,35 @@ footer,
     word-break: break-word;
 }
 
+/* --- Indikator "sedang mengetik" di dalam bubble jawaban --- */
+.ac-typing {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.15rem 0;
+}
+.ac-typing-dots { display: inline-flex; gap: 4px; }
+.ac-typing-dots i {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--ac-accent);
+    animation: ac-bounce 1.1s infinite ease-in-out;
+}
+.ac-typing-dots i:nth-child(2) { animation-delay: 0.15s; }
+.ac-typing-dots i:nth-child(3) { animation-delay: 0.3s; }
+.ac-typing-label {
+    font-size: var(--ac-fs-sm);
+    color: var(--ac-muted);
+}
+@keyframes ac-bounce {
+    0%, 65%, 100% { transform: translateY(0); opacity: 0.35; }
+    30%           { transform: translateY(-4px); opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .ac-typing-dots i { animation: none; opacity: 0.7; }
+}
+
 /* --- Pencarian dan paginasi daftar dokumen --- */
 .st-key-doc_search { padding: 0.15rem 0.1rem 0.35rem; }
 .st-key-doc_search [data-testid="stTextInput"] input {
@@ -1335,8 +1364,15 @@ def render_conversation_row(conv: dict) -> None:
 # --------------------------------------------------------------------------- #
 # Area chat
 # --------------------------------------------------------------------------- #
-def render_empty_state() -> None:
-    with st.container(key="empty_wrap"):
+def render_empty_state(slot) -> None:
+    """Tampilkan sambutan awal di dalam ``slot``.
+
+    Ditaruh di ``st.empty()`` supaya begitu pengguna mengirim pesan, seluruh
+    isinya langsung hilang. Kalau tidak, Streamlit baru membuang elemen lama
+    setelah script selesai, sehingga chip saran masih terlihat menggantung
+    di antara pertanyaan dan jawaban selama menunggu model.
+    """
+    with slot.container(key="empty_wrap"):
         _render_empty_state_body()
 
 
@@ -1463,6 +1499,26 @@ def retrieve_sources(question: str) -> tuple[list[dict], str | None]:
     ], None
 
 
+def typing_html(label: str) -> str:
+    """Titik beranimasi plus keterangan tahap yang sedang berjalan."""
+    return (
+        '<div class="ac-typing">'
+        '<span class="ac-typing-dots"><i></i><i></i><i></i></span>'
+        f'<span class="ac-typing-label">{escape(label)}</span>'
+        "</div>"
+    )
+
+
+def clear_on_first(stream: Iterable[str], placeholder) -> Iterator[str]:
+    """Hapus indikator mengetik begitu potongan pertama jawaban tiba."""
+    cleared = False
+    for piece in stream:
+        if not cleared:
+            placeholder.empty()
+            cleared = True
+        yield piece
+
+
 def generate_reply(conversation_id: int, question: str | None = None) -> None:
     """Stream jawaban asisten untuk percakapan, lalu simpan hasilnya.
 
@@ -1480,24 +1536,37 @@ def generate_reply(conversation_id: int, question: str | None = None) -> None:
 
     sources: list[dict] = []
     retrieval_error: str | None = None
-    if question:
-        with st.spinner(f"Mencari {TOP_K} kutipan paling relevan…"):
-            sources, retrieval_error = retrieve_sources(question)
-
-    context = rag.build_context(
-        [vectorstore.SearchHit(**source) for source in sources]
-    ) if sources else None
-
     buffer: list[str] = []
     error: str | None = None
 
     with st.container(key="msg-assistant-live"), st.chat_message("assistant", avatar=BOT_AVATAR):
+        # Indikator ditaruh di dalam bubble dan menyala sejak awal, menutupi
+        # pencarian dokumen sekaligus jeda sebelum token pertama datang dari
+        # Groq. Tanpa ini layar diam tanpa tanda apa pun selama beberapa detik.
+        typing = st.empty()
         try:
-            st.write_stream(tee(llm.stream_chat(messages, context=context), buffer))
+            if question and rag_enabled():
+                typing.markdown(
+                    typing_html(f"Mencari {TOP_K} kutipan paling relevan…"),
+                    unsafe_allow_html=True,
+                )
+                sources, retrieval_error = retrieve_sources(question)
+
+            context = rag.build_context(
+                [vectorstore.SearchHit(**source) for source in sources]
+            ) if sources else None
+
+            typing.markdown(typing_html("Menyusun jawaban…"), unsafe_allow_html=True)
+            st.write_stream(
+                clear_on_first(tee(llm.stream_chat(messages, context=context), buffer), typing)
+            )
         except llm.LLMConfigError as exc:
             error = str(exc)
         except Exception as exc:  # noqa: BLE001 - error apa pun tetap dilaporkan ke pengguna
             error = errors.friendly_message(exc, "Jawaban gagal diambil dari Groq.")
+        finally:
+            # Kalau tidak ada token yang sempat datang, indikatornya tetap dibersihkan.
+            typing.empty()
 
     answer = "".join(buffer).strip()
     if answer:
@@ -1603,6 +1672,10 @@ def main() -> None:
             icon=":material/key_off:",
         )
 
+    # Slot dibuat lebih dulu supaya sambutan awal punya tempat tetap yang
+    # bisa dikosongkan seketika saat pengguna mulai bertanya.
+    empty_slot = st.empty()
+
     messages = db.list_messages(conv_id) if conv_id else []
     if messages:
         conversation = db.get_conversation(conv_id)
@@ -1611,7 +1684,7 @@ def main() -> None:
         for message in messages:
             render_message(message["role"], message["content"], key=message["id"])
     elif not prompt and not attachments:
-        render_empty_state()
+        render_empty_state(empty_slot)
 
     if prompt or attachments:
         handle_prompt(prompt, attachments)

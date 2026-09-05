@@ -29,6 +29,9 @@ Dibangun dengan Streamlit, Groq, Google Gemini Embedding, Qdrant, dan SQLite.
 **Percakapan**
 
 - Jawaban tampil streaming, kata per kata, lewat `st.write_stream`
+- Indikator titik beranimasi di dalam bubble jawaban menyala sejak pesan
+  dikirim sampai kata pertama muncul, dengan keterangan tahapnya: mencari
+  kutipan lalu menyusun jawaban. Tidak ada jeda diam tanpa tanda apa pun
 - Riwayat percakapan tersimpan di SQLite dan tidak hilang saat halaman di-refresh
 - Judul percakapan dibuat otomatis dari pesan pertama, maksimal 6 kata
 - Sidebar berisi daftar percakapan, terbaru di atas, bisa dibuka kembali kapan saja
@@ -75,7 +78,9 @@ Dibangun dengan Streamlit, Groq, Google Gemini Embedding, Qdrant, dan SQLite.
 - Percobaan ulang otomatis dengan jeda bertambah, mengikuti header `Retry-After`
   kalau server menyebutkannya. Kesalahan permanen seperti API key salah tidak
   diulang supaya pengguna tidak menunggu percuma
-- Loading state di semua aksi yang memakan waktu
+- Loading state di semua aksi yang memakan waktu: indikator mengetik saat
+  menunggu jawaban, `st.status` bertahap saat mengunggah, dan spinner saat
+  membuat judul atau menghapus dokumen
 - Tema gelap kustom dengan satu warna aksen, font Plus Jakarta Sans
 - Tata letak menyesuaikan layar tablet
 - Expander "Tentang aplikasi ini" berisi ringkasan arsitektur
