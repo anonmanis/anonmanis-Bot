@@ -1618,7 +1618,11 @@ def handle_prompt(prompt: str | None, attachments: list | None = None) -> None:
 
     if is_new_conversation:
         with st.spinner("Membuat judul percakapan…"):
-            db.rename_conversation(conv_id, llm.generate_title(prompt))
+            try:
+                title = llm.generate_title(prompt)
+            except Exception:  # noqa: BLE001 - judul tidak boleh membatalkan jawaban
+                title = llm.fallback_title(prompt)
+            db.rename_conversation(conv_id, title)
 
     st.rerun()
 

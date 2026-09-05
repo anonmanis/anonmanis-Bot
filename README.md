@@ -422,7 +422,7 @@ kode. File `.env` sudah masuk `.gitignore`.
 | `GEMINI_API_KEY` | Untuk RAG | tidak ada | API key Gemini untuk embedding. Tanpa ini aplikasi tetap jalan, dokumen tetap diurai dan disimpan, hanya pencarian RAG yang mati. `GOOGLE_API_KEY` juga diterima |
 | `GROQ_BASE_URL` | Tidak | `https://api.groq.com/openai/v1` | Endpoint OpenAI-compatible milik Groq |
 | `GROQ_MODEL` | Tidak | `llama-3.3-70b-versatile` | Model chat utama |
-| `GROQ_TITLE_MODEL` | Tidak | mengikuti `GROQ_MODEL` | Model untuk meringkas judul percakapan |
+| `GROQ_TITLE_MODEL` | Tidak | mengikuti `GROQ_MODEL` | Model untuk meringkas judul percakapan. Model reasoning tetap didukung, kalau balasannya kosong judul otomatis diambil dari pesan pertama pengguna |
 | `GROQ_VISION_MODEL` | Tidak | `qwen/qwen3.6-27b` | Model multimodal untuk membaca gambar |
 | `GEMINI_EMBED_MODEL` | Tidak | `gemini-embedding-001` | Model embedding |
 | `GEMINI_EMBED_DIM` | Tidak | `768` | Dimensi vektor yang diminta, rentang 128 sampai 3072 |

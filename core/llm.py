@@ -54,6 +54,16 @@ TITLE_PROMPT = (
 
 MAX_TITLE_WORDS = 6
 
+# Model reasoning (mis. gpt-oss) memakai sebagian jatah token untuk berpikir
+# sebelum menulis jawaban. Jatahnya dilebihkan supaya masih tersisa ruang untuk
+# judulnya, bukan hanya untuk proses berpikir.
+TITLE_MAX_TOKENS = 512
+
+# Sebagian model reasoning menyelipkan proses berpikirnya di dalam content.
+# Blok itu dibuang supaya yang tersisa hanya judul yang diminta.
+THINK_BLOCK_RE = re.compile(r"<(think|thinking|reasoning)>.*?</\1>", re.IGNORECASE | re.DOTALL)
+UNCLOSED_THINK_RE = re.compile(r"<(think|thinking|reasoning)>.*\Z", re.IGNORECASE | re.DOTALL)
+
 
 class LLMConfigError(RuntimeError):
     """Dipakai saat konfigurasi (mis. API key) belum lengkap."""
@@ -151,6 +161,28 @@ def stream_chat(
             yield piece
 
 
+def response_text(response: Any) -> str:
+    """Ambil teks balasan dengan aman, termasuk saat model tidak membalas apa pun.
+
+    Balasan kosong itu sah menurut API (mis. jatah token habis dipakai untuk
+    reasoning), jadi jangan pernah mengindeks langsung tanpa pengecekan.
+    """
+    choices = getattr(response, "choices", None) or []
+    if not choices:
+        return ""
+    message = getattr(choices[0], "message", None)
+    if message is None:
+        return ""
+    return (getattr(message, "content", None) or "").strip()
+
+
+def strip_reasoning(text: str) -> str:
+    """Buang blok berpikir model reasoning, termasuk yang terpotong di tengah."""
+    cleaned = THINK_BLOCK_RE.sub(" ", text)
+    cleaned = UNCLOSED_THINK_RE.sub(" ", cleaned)
+    return cleaned.strip()
+
+
 def fallback_title(text: str) -> str:
     """Judul cadangan dari teks pengguna kalau pemanggilan model gagal."""
     cleaned = re.sub(r"\s+", " ", (text or "").strip())
@@ -173,17 +205,23 @@ def generate_title(first_user_message: str) -> str:
                     {"role": "user", "content": first_user_message[:2000]},
                 ],
                 temperature=0.2,
-                max_tokens=32,
+                max_tokens=TITLE_MAX_TOKENS,
             ),
             attempts=2,
         )
-        raw = (response.choices[0].message.content or "").strip()
+        raw = strip_reasoning(response_text(response))
     except Exception:
         # Judul bukan hal kritis: kalau gagal, pakai potongan pesan pengguna.
         return fallback_title(first_user_message)
 
+    # Balasan bisa saja kosong walau panggilannya sukses, misalnya saat jatah
+    # token habis dipakai model untuk reasoning. Perlakukan sama seperti gagal.
+    lines = [line.strip() for line in raw.splitlines() if line.strip()]
+    if not lines:
+        return fallback_title(first_user_message)
+
     # Bersihkan tanda kutip, penomoran, dan tanda baca di ujung judul.
-    title = raw.splitlines()[0].strip()
+    title = lines[0]
     title = title.strip("\"'“”‘’ ")
     title = re.sub(r"^(judul|title)\s*[:\-]\s*", "", title, flags=re.IGNORECASE)
     title = re.sub(r"\s+", " ", title).strip(" .,:;-–—")

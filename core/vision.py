@@ -13,7 +13,13 @@ from pathlib import Path
 
 from core import errors
 from core.config import get_settings
-from core.llm import LLMConfigError, get_client, with_retry
+from core.llm import (
+    LLMConfigError,
+    get_client,
+    response_text,
+    strip_reasoning,
+    with_retry,
+)
 
 MIME_TYPES = {
     "png": "image/png",
@@ -95,7 +101,7 @@ def describe_image(image_bytes: bytes, filename: str) -> str:
     except Exception as exc:  # noqa: BLE001 - diterjemahkan jadi pesan ramah
         raise VisionError(errors.friendly_message(exc, "Gambar gagal dibaca.")) from exc
 
-    text = (response.choices[0].message.content or "").strip()
+    text = strip_reasoning(response_text(response))
     if not text:
         raise VisionError("Model vision tidak mengembalikan deskripsi apa pun.")
     return text
