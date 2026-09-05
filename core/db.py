@@ -296,22 +296,46 @@ def set_document_status(document_id: int, status: str) -> None:
         )
 
 
-def list_documents() -> list[dict[str, Any]]:
-    """Daftar dokumen, yang paling baru diunggah ada di atas."""
+def _search_clause(search: str) -> tuple[str, list[Any]]:
+    """Potongan WHERE untuk pencarian nama file (kosong berarti tanpa filter)."""
+    term = (search or "").strip()
+    if not term:
+        return "", []
+    # ESCAPE dipakai supaya % dan _ yang diketik pengguna dicari apa adanya.
+    pattern = "%" + term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+    return " WHERE filename LIKE ? ESCAPE '\\'", [pattern]
+
+
+def list_documents(
+    search: str = "",
+    limit: int | None = None,
+    offset: int = 0,
+) -> list[dict[str, Any]]:
+    """Daftar dokumen, yang paling baru diunggah ada di atas.
+
+    ``search`` menyaring berdasarkan nama file, sedangkan ``limit`` dan
+    ``offset`` dipakai untuk paginasi. Keduanya dikerjakan di SQL supaya
+    yang dibaca ke memori hanya satu halaman.
+    """
+    where, params = _search_clause(search)
+    sql = (
+        "SELECT id, filename, filetype, filesize, char_count, status, uploaded_at "
+        "FROM documents" + where + " ORDER BY uploaded_at DESC, id DESC"
+    )
+    if limit is not None:
+        sql += " LIMIT ? OFFSET ?"
+        params = [*params, int(limit), max(0, int(offset))]
+
     with connect() as conn:
-        rows = conn.execute(
-            """
-            SELECT id, filename, filetype, filesize, char_count, status, uploaded_at
-            FROM documents
-            ORDER BY uploaded_at DESC, id DESC
-            """
-        ).fetchall()
+        rows = conn.execute(sql, params).fetchall()
     return [dict(row) for row in rows]
 
 
-def count_documents() -> int:
+def count_documents(search: str = "") -> int:
+    """Jumlah dokumen, ikut menghitung filter pencarian kalau diberikan."""
+    where, params = _search_clause(search)
     with connect() as conn:
-        return int(conn.execute("SELECT COUNT(*) FROM documents").fetchone()[0])
+        return int(conn.execute("SELECT COUNT(*) FROM documents" + where, params).fetchone()[0])
 
 
 def get_document_text(document_id: int) -> str:

@@ -109,22 +109,19 @@ def allowed_types_sentence() -> str:
     return ", ".join(TYPE_LABELS[t] for t in ALLOWED_TYPES)
 
 
-def split_batch(files: list) -> tuple[list, list]:
-    """Bagi pilihan file menjadi yang diproses sekarang dan yang kelebihan."""
-    items = list(files)
-    return items[:MAX_FILES_PER_BATCH], items[MAX_FILES_PER_BATCH:]
+def check_batch(count: int) -> str | None:
+    """Periksa jumlah file dalam satu kali unggah.
 
-
-def overflow_result(filename: str) -> "IngestResult":
-    """Hasil untuk file yang melebihi jatah satu kali unggah."""
-    return IngestResult(
-        filename=filename,
-        ok=False,
-        message=(
-            f"Maksimal {MAX_FILES_PER_BATCH} file sekali unggah. "
-            "File ini bisa diunggah lagi setelah batch sekarang selesai."
-        ),
-        status=STATUS_FAILED,
+    Mengembalikan pesan penolakan kalau melebihi jatah, atau ``None`` kalau
+    lolos. Kelebihan jumlah menolak seluruh batch, tidak memproses sebagian,
+    supaya pengguna sendiri yang memilih file mana yang jadi diproses.
+    """
+    if count <= MAX_FILES_PER_BATCH:
+        return None
+    return (
+        f"Kamu memilih {count} file sekaligus, sedangkan batasnya "
+        f"{MAX_FILES_PER_BATCH} file per unggah. Tidak ada yang diproses. "
+        f"Silakan pilih ulang maksimal {MAX_FILES_PER_BATCH} file."
     )
 
 

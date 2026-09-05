@@ -478,6 +478,45 @@ footer,
     word-break: break-word;
 }
 
+/* --- Pencarian dan paginasi daftar dokumen --- */
+.st-key-doc_search { padding: 0.15rem 0.1rem 0.35rem; }
+.st-key-doc_search [data-testid="stTextInput"] input {
+    background: var(--ac-surface);
+    border-radius: var(--ac-radius-sm);
+    font-size: var(--ac-fs-sm);
+    padding: 0.4rem 0.7rem;
+}
+.st-key-doc_search [data-testid="stTextInput"] input::placeholder {
+    color: var(--ac-muted);
+}
+.st-key-doc_search [data-testid="stTextInput"] > div:focus-within {
+    border-color: var(--ac-accent-edge);
+}
+
+.ac-pager {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    line-height: 1.35;
+    font-size: var(--ac-fs-xs);
+    color: var(--ac-text);
+}
+.ac-pager span {
+    font-size: var(--ac-fs-2xs);
+    color: var(--ac-muted);
+}
+[data-testid="stSidebar"] [class*="st-key-doc_prev"] button,
+[data-testid="stSidebar"] [class*="st-key-doc_next"] button {
+    justify-content: center !important;
+    padding: 0.35rem !important;
+    color: var(--ac-muted);
+}
+[data-testid="stSidebar"] [class*="st-key-doc_prev"] button:hover:not(:disabled),
+[data-testid="stSidebar"] [class*="st-key-doc_next"] button:hover:not(:disabled) {
+    color: var(--ac-accent);
+    background: var(--ac-accent-dim);
+}
+
 /* --- Status pemrosesan lampiran di area chat --- */
 .st-key-chat-upload [data-testid="stExpander"] {
     margin: 0 0 var(--ac-gap-md) 3rem;
@@ -899,33 +938,41 @@ def shorten(name: str, limit: int = 26) -> str:
     return f"{head}…{dot}{extension}" if dot else f"{name[: limit - 1]}…"
 
 
-def process_uploads(files: list) -> list:
+def process_uploads(files: list) -> tuple[list, str | None]:
     """Jalankan pipeline ingest untuk tiap file sambil menampilkan tahapannya.
 
-    Mengembalikan daftar ``IngestResult``. Pemanggil yang memutuskan kapan
-    harus ``st.rerun()``, karena unggahan dari sidebar dan dari kotak chat
-    punya kelanjutan yang berbeda.
-    """
-    accepted, overflow = ingest.split_batch(files)
-    results = []
+    Mengembalikan ``(hasil, pesan_penolakan_batch)``. Kalau jumlah file dalam
+    satu unggahan melebihi batas, tidak ada satu pun yang diproses supaya
+    pengguna sendiri yang memilih file mana yang jadi dikirim.
 
-    for uploaded in accepted:
+    Pemanggil yang memutuskan kapan harus ``st.rerun()``, karena unggahan dari
+    sidebar dan dari kotak chat punya kelanjutan yang berbeda.
+    """
+    batch_error = ingest.check_batch(len(files))
+    if batch_error:
+        return [], batch_error
+
+    results = []
+    for uploaded in files:
         label = shorten(uploaded.name, 22)
         with st.status(f"Memproses {label}", expanded=True) as status:
             result = ingest.ingest(uploaded.name, uploaded.getvalue(), progress=st.write)
             status.update(
-                label=f"{label} — {'selesai' if result.ok else 'ditolak'}",
+                label=f"{label}, {'selesai' if result.ok else 'ditolak'}",
                 state="complete" if result.ok else "error",
                 expanded=False,
             )
         results.append(result)
 
-    results.extend(ingest.overflow_result(item.name) for item in overflow)
-    return results
+    return results, None
 
 
 def render_upload_results() -> None:
     """Hasil unggahan terakhir; hilang sendiri begitu ada interaksi lain."""
+    batch_error = st.session_state.pop("upload_error", None)
+    if batch_error:
+        st.error(batch_error, icon=":material/block:")
+
     for result in st.session_state.pop("upload_results", []):
         name = shorten(result.filename, 22)
         if result.ok:
@@ -1116,10 +1163,76 @@ def render_rag_controls() -> None:
         )
 
 
+DOCS_PER_PAGE = 5
+
+
+def paged_documents(total: int) -> tuple[list, int, int, int, str]:
+    """Ambil satu halaman daftar dokumen, beserta kotak pencariannya.
+
+    Pencarian dan tombol halaman hanya muncul kalau daftarnya sudah lebih
+    panjang dari satu halaman, supaya sidebar tetap ringkas saat dokumennya
+    masih sedikit. Kata kunci disimpan di kunci biasa (bukan kunci widget)
+    karena Streamlit membuang state widget yang tidak sempat dirender pada
+    suatu run, dan tombol unggah di atas memang memicu rerun lebih dulu.
+    """
+    query = ""
+    if total > DOCS_PER_PAGE:
+        with st.container(key="doc_search"):
+            query = st.text_input(
+                "Cari dokumen",
+                value=st.session_state.get("doc_query", ""),
+                key="doc_query_widget",
+                placeholder="Cari nama file…",
+                label_visibility="collapsed",
+            ).strip()
+        if query != st.session_state.get("doc_query", ""):
+            st.session_state.doc_page = 1
+        st.session_state.doc_query = query
+    else:
+        st.session_state.doc_query = ""
+
+    matched = db.count_documents(query)
+    pages = max(1, -(-matched // DOCS_PER_PAGE))
+    page = min(max(1, int(st.session_state.get("doc_page", 1))), pages)
+    st.session_state.doc_page = page
+
+    documents = db.list_documents(
+        search=query, limit=DOCS_PER_PAGE, offset=(page - 1) * DOCS_PER_PAGE
+    )
+    return documents, matched, page, pages, query
+
+
+def render_pager(page: int, pages: int, matched: int) -> None:
+    """Tombol pindah halaman untuk daftar dokumen."""
+    prev_col, info_col, next_col = st.columns(
+        [0.18, 0.64, 0.18], gap="small", vertical_alignment="center"
+    )
+    with prev_col.container(key="doc_prev"):
+        if st.button(
+            "", icon=":material/chevron_left:", key="doc_prev_btn",
+            width="stretch", type="tertiary", disabled=page <= 1,
+            help="Halaman sebelumnya",
+        ):
+            st.session_state.doc_page = page - 1
+            st.rerun()
+    info_col.markdown(
+        f'<div class="ac-pager">Hal {page} dari {pages}'
+        f'<span>{matched} dokumen</span></div>',
+        unsafe_allow_html=True,
+    )
+    with next_col.container(key="doc_next"):
+        if st.button(
+            "", icon=":material/chevron_right:", key="doc_next_btn",
+            width="stretch", type="tertiary", disabled=page >= pages,
+            help="Halaman berikutnya",
+        ):
+            st.session_state.doc_page = page + 1
+            st.rerun()
+
+
 def render_documents_section() -> None:
     """Blok unggah dokumen: uploader, kuota, dan daftar dokumen tersimpan."""
-    documents = db.list_documents()
-    used = len(documents)
+    used = db.count_documents()
 
     st.markdown(
         f'<div class="ac-section">Dokumen<span class="ac-count">{used}</span></div>',
@@ -1135,20 +1248,36 @@ def render_documents_section() -> None:
             label_visibility="collapsed",
         )
     if files:
-        st.session_state.upload_results = process_uploads(files)
+        results, batch_error = process_uploads(files)
+        st.session_state.upload_results = results
+        st.session_state.upload_error = batch_error
         # Ganti key uploader supaya widget kosong lagi dan file tidak diproses dua kali.
         st.session_state.upload_round = st.session_state.get("upload_round", 0) + 1
+        st.session_state.doc_page = 1
         st.rerun()
 
     render_upload_results()
     render_limits(used)
 
+    documents, matched, page, pages, query = paged_documents(used)
+
+    if not documents:
+        pesan = (
+            f"Tidak ada dokumen yang cocok dengan <strong>{escape(query)}</strong>."
+            if query
+            else "Belum ada dokumen. Unggah lewat kotak di atas atau lampirkan di chat."
+        )
+        st.markdown(f'<div class="ac-hint">{pesan}</div>', unsafe_allow_html=True)
+
     for document in documents:
         render_document_row(document)
 
+    if pages > 1:
+        render_pager(page, pages, matched)
+
     if documents:
         st.markdown(
-            '<div class="ac-note">File asli tidak disimpan — hanya teks hasil '
+            '<div class="ac-note">File asli tidak disimpan, hanya teks hasil '
             "ekstraksi dan vector-nya.</div>",
             unsafe_allow_html=True,
         )
@@ -1391,8 +1520,15 @@ def handle_prompt(prompt: str | None, attachments: list | None = None) -> None:
 
     if attachments:
         with st.container(key="chat-upload"):
-            results = process_uploads(attachments)
+            results, batch_error = process_uploads(attachments)
         st.session_state.upload_results = results
+        st.session_state.upload_error = batch_error
+        st.session_state.doc_page = 1
+        if batch_error:
+            # Seluruh batch ditolak, jadi pertanyaannya tidak ikut dikirim:
+            # jawaban tanpa file yang dimaksud justru menyesatkan.
+            st.rerun()
+            return
 
     if not prompt:
         # Hanya melampirkan file tanpa bertanya: cukup diproses lalu segarkan.
@@ -1437,6 +1573,8 @@ def main() -> None:
     st.session_state.setdefault("pending_doc_delete", None)
     st.session_state.setdefault("upload_round", 0)
     st.session_state.setdefault("rag_on", True)
+    st.session_state.setdefault("doc_page", 1)
+    st.session_state.setdefault("doc_query", "")
 
     conv_id = active_conversation_id()
     db.delete_empty_conversations(except_id=conv_id)

@@ -42,6 +42,9 @@ Dibangun dengan Streamlit, Groq, Google Gemini Embedding, Qdrant, dan SQLite.
   keduanya melewati pipeline yang sama dan sama-sama masuk ke indeks RAG
 - Batas 5 MB per file dan 5 file per sekali unggah. Batas ini berlaku per
   batch, bukan kuota permanen, jadi pengguna boleh mengunggah berkali-kali
+- Memilih lebih dari 5 file sekaligus menolak seluruh batch dengan satu
+  notifikasi, tidak memproses sebagiannya, supaya pengguna sendiri yang
+  menentukan file mana yang jadi dikirim
 - Pelanggaran ditolak dengan pesan yang jelas, bukan exception mentah
 - Gambar dibaca model vision Groq lebih dulu, deskripsi dan teks di dalamnya
   lalu diperlakukan seperti teks dokumen biasa sehingga ikut tercari lewat RAG
@@ -49,6 +52,8 @@ Dibangun dengan Streamlit, Groq, Google Gemini Embedding, Qdrant, dan SQLite.
 - Tahapan proses tampil langsung lewat `st.status`, dari penyimpanan sementara
   sampai penghapusan file
 - Daftar dokumen menampilkan ikon per tipe, ukuran, jumlah chunk, dan jam unggah
+- Daftar dokumen punya pencarian nama file dan paginasi 5 baris per halaman,
+  keduanya dikerjakan di SQL sehingga yang dibaca ke memori hanya satu halaman
 - Indikator jumlah dokumen tersimpan beserta batas yang berlaku
 - Menghapus dokumen ikut menghapus chunk-nya dari Qdrant
 
@@ -152,10 +157,11 @@ Isi file ditulis ke berkas sementara di folder temp sistem.
 
 **Langkah 2, validasi.**
 Ekstensi harus termasuk PDF, DOCX, XLSX, PPTX, PNG, JPG, atau JPEG, dengan
-ukuran maksimal 5 MB per file. Satu kali unggah menerima paling banyak 5 file;
-kelebihannya tidak diproses dan pengguna diberi tahu agar mengunggahnya lagi
-setelah batch berjalan selesai. Batas ini berlaku per batch, bukan kuota
-permanen, sehingga jumlah dokumen tersimpan tidak dibatasi. Pelanggaran
+ukuran maksimal 5 MB per file. Satu kali unggah menerima paling banyak 5 file.
+Kalau pengguna memilih lebih dari itu, seluruh batch ditolak dengan satu
+notifikasi dan tidak ada file yang diproses, sehingga pengguna sendiri yang
+memilih ulang file mana yang jadi dikirim. Batas ini berlaku per batch, bukan
+kuota permanen, sehingga jumlah dokumen tersimpan tidak dibatasi. Pelanggaran
 dikembalikan sebagai pesan yang bisa dibaca pengguna, bukan exception.
 
 File bisa masuk lewat dua pintu, uploader di sidebar atau lampiran di kotak
@@ -221,7 +227,8 @@ halaman di-refresh.
 
 | Parameter | Nilai |
 | --- | --- |
-| Maksimal file per sekali unggah | 5 |
+| Maksimal file per sekali unggah | 5, kelebihannya menolak seluruh batch |
+| Baris per halaman daftar dokumen | 5 |
 | Maksimal ukuran per file | 5 MB |
 | Ukuran chunk | 800 karakter |
 | Overlap antar chunk | 150 karakter |
@@ -477,8 +484,8 @@ anonmanis-Bot/
 
 - Maksimal 5 file per sekali unggah dan 5 MB per file, ditetapkan di
   `core/ingest.py`. Jumlah dokumen tersimpan tidak dibatasi, jadi indeks Qdrant
-  bisa tumbuh terus dan daftar dokumen di sidebar ikut memanjang. Belum ada
-  paginasi maupun pencarian di daftar itu.
+  bisa tumbuh terus. Daftar dokumen sudah punya pencarian dan paginasi, tetapi
+  pencariannya hanya mencocokkan nama file, belum isi dokumennya.
 - Qdrant local mode mengunci folder penyimpanan untuk satu proses. Aplikasi
   ini hanya bisa dijalankan satu instance pada satu waktu untuk folder data
   yang sama. Untuk akses bersamaan, Qdrant perlu dijalankan sebagai server.
